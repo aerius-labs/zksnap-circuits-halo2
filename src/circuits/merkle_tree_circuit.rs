@@ -2,13 +2,13 @@ use super::super::chips::merkle_tree_chip::{MerkleTreeV3Chip, MerkleTreeV3Config
 use halo2_proofs::{arithmetic::FieldExt, circuit::*, plonk::*};
 
 #[derive(Default)]
-pub struct MerkleTreeV3Circuit<F: FieldExt> {
+pub struct MerkleTreeCircuit<F: FieldExt> {
     pub leaf: Value<F>,
     pub path_elements: Vec<Value<F>>,
     pub path_indices: Vec<Value<F>>,
 }
 
-impl<F: FieldExt> Circuit<F> for MerkleTreeV3Circuit<F> {
+impl<F: FieldExt> Circuit<F> for MerkleTreeCircuit<F> {
     type Config = MerkleTreeV3Config<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -61,7 +61,7 @@ impl<F: FieldExt> Circuit<F> for MerkleTreeV3Circuit<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::MerkleTreeV3Circuit;
+    use super::MerkleTreeCircuit;
     use halo2_gadgets::poseidon::primitives::{self as poseidon, ConstantLength, P128Pow5T3};
     use halo2_proofs::{circuit::Value, dev::MockProver, halo2curves::pasta::Fp};
 
@@ -89,8 +89,8 @@ mod tests {
     #[test]
     fn test_merkle_tree() {
         let leaf = 99u64;
-        let elements = vec![5u64; (2u64.pow(8)) as usize];
-        let indices = vec![0u64; (2u64.pow(8)) as usize];
+        let elements = vec![5u64; 8 as usize];
+        let indices = vec![0u64; 8 as usize];
 
         let root = compute_merkle_root(&leaf, &elements, &indices);
 
@@ -104,7 +104,7 @@ mod tests {
             .map(|x| Value::known(Fp::from(x.to_owned())))
             .collect();
 
-        let circuit = MerkleTreeV3Circuit {
+        let circuit = MerkleTreeCircuit {
             leaf: leaf_fp,
             path_elements: elements_fp,
             path_indices: indices_fp,
@@ -148,7 +148,7 @@ fn print_merkle_tree_3() {
         .map(|x| Value::known(Fp::from(x.to_owned())))
         .collect();
 
-    let circuit = MerkleTreeV3Circuit {
+    let circuit = MerkleTreeCircuit {
         leaf: leaf_fp,
         path_elements: elements_fp,
         path_indices: indices_fp,
