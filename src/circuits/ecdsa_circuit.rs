@@ -25,12 +25,12 @@ const BIT_LEN_LIMB: usize = 68;
 const NUMBER_OF_LIMBS: usize = 4;
 
 #[derive(Clone, Debug)]
-struct TestCircuitEcdsaVerifyConfig {
+struct TestEcdsaConfig {
     main_gate_config: MainGateConfig,
     range_config: RangeConfig,
 }
 
-impl TestCircuitEcdsaVerifyConfig {
+impl TestEcdsaConfig {
     pub fn new<C: CurveAffine, N: FieldExt>(meta: &mut ConstraintSystem<N>) -> Self {
         let (rns_base, rns_scalar) = GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
         let main_gate_config = MainGate::<N>::configure(meta);
@@ -45,7 +45,7 @@ impl TestCircuitEcdsaVerifyConfig {
             composition_bit_lens,
             overflow_bit_lens,
         );
-        TestCircuitEcdsaVerifyConfig {
+        TestEcdsaConfig {
             main_gate_config,
             range_config,
         }
@@ -64,7 +64,7 @@ impl TestCircuitEcdsaVerifyConfig {
 }
 
 #[derive(Default, Clone)]
-struct TestCircuitEcdsaVerify<E: CurveAffine, N: FieldExt> {
+struct TestEcdsaVerify<E: CurveAffine, N: FieldExt> {
     public_key: Value<E>,
     signature: Value<(E::Scalar, E::Scalar)>,
     msg_hash: Value<E::Scalar>,
@@ -74,8 +74,8 @@ struct TestCircuitEcdsaVerify<E: CurveAffine, N: FieldExt> {
     _marker: PhantomData<N>,
 }
 
-impl<E: CurveAffine, N: FieldExt> Circuit<N> for TestCircuitEcdsaVerify<E, N> {
-    type Config = TestCircuitEcdsaVerifyConfig;
+impl<E: CurveAffine, N: FieldExt> Circuit<N> for TestEcdsaVerify<E, N> {
+    type Config = TestEcdsaConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -83,7 +83,7 @@ impl<E: CurveAffine, N: FieldExt> Circuit<N> for TestCircuitEcdsaVerify<E, N> {
     }
 
     fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-        TestCircuitEcdsaVerifyConfig::new::<E, N>(meta)
+        TestEcdsaConfig::new::<E, N>(meta)
     }
 
     fn synthesize(
@@ -176,7 +176,7 @@ pub fn run_fixed<C: CurveAffine, N: FieldExt>(
     }
 
     let aux_generator = <Secp256k1 as CurveAffine>::CurveExt::random(OsRng).to_affine();
-    let circuit = TestCircuitEcdsaVerify::<Secp256k1, N> {
+    let circuit = TestEcdsaVerify::<Secp256k1, N> {
         public_key: Value::known(public_key),
         signature: Value::known((r, s)),
         msg_hash: Value::known(msg_hash),

@@ -7,7 +7,7 @@ const RATE: usize = 2;
 const L: usize = 2;
 
 #[derive(Debug, Clone)]
-pub struct MerkleTreeV3Config<F: FieldExt> {
+pub struct MerkleTreeConfig<F: FieldExt> {
     pub advice: [Column<Advice>; 3],
     pub bool_selector: Selector,
     pub swap_selector: Selector,
@@ -15,12 +15,12 @@ pub struct MerkleTreeV3Config<F: FieldExt> {
     pub poseidon_config: PoseidonConfig<F, WIDTH, RATE, L>,
 }
 #[derive(Debug, Clone)]
-pub struct MerkleTreeV3Chip<F: FieldExt> {
-    config: MerkleTreeV3Config<F>,
+pub struct MerkleTreeChip<F: FieldExt> {
+    config: MerkleTreeConfig<F>,
 }
 
-impl<F: FieldExt> MerkleTreeV3Chip<F> {
-    pub fn construct(config: MerkleTreeV3Config<F>) -> Self {
+impl<F: FieldExt> MerkleTreeChip<F> {
+    pub fn construct(config: MerkleTreeConfig<F>) -> Self {
         Self { config }
     }
 
@@ -28,7 +28,7 @@ impl<F: FieldExt> MerkleTreeV3Chip<F> {
         meta: &mut ConstraintSystem<F>,
         advice: [Column<Advice>; 3],
         instance: Column<Instance>,
-    ) -> MerkleTreeV3Config<F> {
+    ) -> MerkleTreeConfig<F> {
         let col_a = advice[0];
         let col_b = advice[1];
         let col_c = advice[2];
@@ -72,7 +72,7 @@ impl<F: FieldExt> MerkleTreeV3Chip<F> {
         let poseidon_config =
             PoseidonChip::<F, MySpec<F, WIDTH, RATE>, WIDTH, RATE, L>::configure(meta, hash_inputs);
 
-        MerkleTreeV3Config {
+        MerkleTreeConfig {
             advice: [col_a, col_b, col_c],
             bool_selector,
             swap_selector,

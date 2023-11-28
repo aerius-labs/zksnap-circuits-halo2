@@ -1,15 +1,15 @@
-use super::super::chips::merkle_tree_chip::{MerkleTreeV3Chip, MerkleTreeV3Config};
+use super::super::chips::merkle_tree_chip::{MerkleTreeChip, MerkleTreeConfig};
 use halo2_proofs::{arithmetic::FieldExt, circuit::*, plonk::*};
 
 #[derive(Default)]
-pub struct MerkleTreeV3Circuit<F: FieldExt> {
+pub struct MerkleTreeCircuit<F: FieldExt> {
     pub leaf: Value<F>,
     pub path_elements: Vec<Value<F>>,
     pub path_indices: Vec<Value<F>>,
 }
 
-impl<F: FieldExt> Circuit<F> for MerkleTreeV3Circuit<F> {
-    type Config = MerkleTreeV3Config<F>;
+impl<F: FieldExt> Circuit<F> for MerkleTreeCircuit<F> {
+    type Config = MerkleTreeConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -23,7 +23,7 @@ impl<F: FieldExt> Circuit<F> for MerkleTreeV3Circuit<F> {
         let col_c = meta.advice_column();
         let instance = meta.instance_column();
 
-        MerkleTreeV3Chip::configure(meta, [col_a, col_b, col_c], instance)
+        MerkleTreeChip::configure(meta, [col_a, col_b, col_c], instance)
     }
 
     fn synthesize(
@@ -31,9 +31,8 @@ impl<F: FieldExt> Circuit<F> for MerkleTreeV3Circuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let chip = MerkleTreeV3Chip::construct(config);
+        let chip = MerkleTreeChip::construct(config);
         let leaf_cell = chip.assing_leaf(layouter.namespace(|| "assign leaf"), self.leaf)?;
-        chip.expose_public(layouter.namespace(|| "public leaf"), &leaf_cell, 0)?;
 
         // apply it for level 0 of the merkle tree
         // node cell passed as input is the leaf cell
@@ -54,14 +53,14 @@ impl<F: FieldExt> Circuit<F> for MerkleTreeV3Circuit<F> {
                 self.path_indices[i],
             )?;
         }
-        chip.expose_public(layouter.namespace(|| "public root"), &digest, 1)?;
+        chip.expose_public(layouter.namespace(|| "public root"), &digest, 0)?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::MerkleTreeV3Circuit;
+    use super::MerkleTreeCircuit;
     use halo2_gadgets::poseidon::primitives::{self as poseidon, ConstantLength, P128Pow5T3};
     use halo2_proofs::{circuit::Value, dev::MockProver, halo2curves::pasta::Fp};
 
@@ -89,8 +88,8 @@ mod tests {
     #[test]
     fn test_merkle_tree() {
         let leaf = 99u64;
-        let elements = vec![5u64; (2u64.pow(8)) as usize];
-        let indices = vec![0u64; (2u64.pow(8)) as usize];
+        let elements = vec![5u64; 8 as usize];
+        let indices = vec![0u64; 8 as usize];
 
         let root = compute_merkle_root(&leaf, &elements, &indices);
 
@@ -104,17 +103,17 @@ mod tests {
             .map(|x| Value::known(Fp::from(x.to_owned())))
             .collect();
 
-        let circuit = MerkleTreeV3Circuit {
+        let circuit = MerkleTreeCircuit {
             leaf: leaf_fp,
             path_elements: elements_fp,
             path_indices: indices_fp,
         };
 
-        let correct_public_input = vec![Fp::from(leaf), root];
+        let correct_public_input = vec![root];
         let valid_prover = MockProver::run(20, &circuit, vec![correct_public_input]).unwrap();
         valid_prover.assert_satisfied();
         println!("2^8 leafs");
-        let wrong_public_input = vec![Fp::from(leaf), Fp::from(0)];
+        let wrong_public_input = vec![Fp::from(0)];
         let invalid_prover = MockProver::run(20, &circuit, vec![wrong_public_input]).unwrap();
         assert!(invalid_prover.verify().is_err());
     }
@@ -122,7 +121,7 @@ mod tests {
 
 #[cfg(feature = "dev-graph")]
 #[test]
-fn print_merkle_tree_3() {
+fn print_merkle_tree() {
     use halo2_proofs::halo2curves::pasta::Fp;
     use plotters::prelude::*;
 
@@ -148,7 +147,7 @@ fn print_merkle_tree_3() {
         .map(|x| Value::known(Fp::from(x.to_owned())))
         .collect();
 
-    let circuit = MerkleTreeV3Circuit {
+    let circuit = MerkleTreeCircuit {
         leaf: leaf_fp,
         path_elements: elements_fp,
         path_indices: indices_fp,
