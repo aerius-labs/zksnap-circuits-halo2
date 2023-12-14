@@ -1,3 +1,4 @@
+workspace = { members = ["src/rec"] }
 [package]
 name = "halo2circuit"
 version = "0.1.0"
