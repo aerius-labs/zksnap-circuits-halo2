@@ -1,3 +1,5 @@
+pub mod utils;
+
 use halo2_base::{
     poseidon::hasher::{ spec::OptimizedPoseidonSpec, PoseidonHasher },
     utils::{ ScalarField, BigPrimeField },
@@ -33,7 +35,7 @@ pub fn verify_merkle_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
     helper: &[AssignedValue<F>]
 ) -> Result<AssignedValue<F>, Error> {
     let gate = range.gate();
-    let spec = OptimizedPoseidonSpec::<F, T, RATE>::new::<8, 57, 0>();
+    let spec = OptimizedPoseidonSpec::<F, T, RATE>::new::<8, 56, 0>();
     let mut hasher = PoseidonHasher::<F, T, RATE>::new(spec);
     hasher.initialize_consts(ctx, gate);
 
@@ -48,3 +50,8 @@ pub fn verify_merkle_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
     Ok(gate.is_equal(ctx, computed_hash, *root))
 }
 
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_merkle_verify() {}
+}
