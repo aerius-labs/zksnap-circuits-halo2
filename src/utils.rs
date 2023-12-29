@@ -1,16 +1,10 @@
 use halo2_base::{
-    gates::{
-        circuit::{ CircuitBuilderStage, BaseCircuitParams, builder::BaseCircuitBuilder },
-        flex_gate::MultiPhaseThreadBreakPoints,
-    },
+    gates::circuit::{ CircuitBuilderStage, BaseCircuitParams, builder::BaseCircuitBuilder },
     halo2_proofs::{
-        poly::{
-            kzg::{
-                commitment::{ ParamsKZG, KZGCommitmentScheme },
-                multiopen::VerifierSHPLONK,
-                strategy::SingleStrategy,
-            },
-            commitment::Params,
+        poly::kzg::{
+            commitment::KZGCommitmentScheme,
+            multiopen::VerifierSHPLONK,
+            strategy::SingleStrategy,
         },
         halo2curves::{ bn256::Bn256, grumpkin::Fq as Fr },
         plonk::verify_proof,
@@ -28,6 +22,7 @@ use snark_verifier_sdk::{
 
 pub fn run<T: DeserializeOwned>(
     k: u32,
+    circuit_params: BaseCircuitParams,
     f: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
     inputs: T
 ) -> Result<Snark, ()> {
@@ -35,7 +30,7 @@ pub fn run<T: DeserializeOwned>(
     let params = gen_srs(k);
 
     // Generate a circuit
-    let circuit = create_circuit(f, inputs, CircuitBuilderStage::Keygen, None, &params);
+    let circuit = create_circuit(circuit_params, f, inputs, CircuitBuilderStage::Keygen);
 
     // Generate Proving Key
     let pk = gen_pk(&params, &circuit, None);
@@ -60,24 +55,12 @@ pub fn run<T: DeserializeOwned>(
 }
 
 fn create_circuit<T: DeserializeOwned>(
+    circuit_params: BaseCircuitParams,
     f: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
     inputs: T,
-    stage: CircuitBuilderStage,
-    pinning: Option<(BaseCircuitParams, MultiPhaseThreadBreakPoints)>,
-    params: &ParamsKZG<Bn256>
+    stage: CircuitBuilderStage
 ) -> BaseCircuitBuilder<Fr> {
-    let mut builder = BaseCircuitBuilder::from_stage(stage);
-    if let Some((params, break_points)) = pinning {
-        builder.set_params(params);
-        builder.set_break_points(break_points);
-    } else {
-        let k = params.k() as usize;
-        // we use env var `LOOKUP_BITS` to determine whether to use `GateThreadBuilder` or `RangeCircuitBuilder`. The difference is that the latter creates a lookup table with 2^LOOKUP_BITS rows, while the former does not.
-        let lookup_bits = k - 1;
-        builder.set_k(k);
-        builder.set_lookup_bits(lookup_bits);
-        builder.set_instance_columns(1);
-    }
+    let mut builder = BaseCircuitBuilder::new(false).use_params(circuit_params);
 
     // builder.main(phase) gets a default "main" thread for the given phase. For most purposes we only need to think about phase 0
     // we need a 64-bit number as input in this case
