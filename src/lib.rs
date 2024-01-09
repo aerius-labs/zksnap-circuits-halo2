@@ -1,1 +1,1 @@
-pub mod merkletree;
+pub mod voter;
