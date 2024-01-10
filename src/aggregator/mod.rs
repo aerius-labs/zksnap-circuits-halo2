@@ -28,6 +28,8 @@ where
 {
     // This builder can be used to instantiate the custom circuit and then will be passed to the aggregation circuit.
     let mut builder = BaseCircuitBuilder::<Fr>::from_stage(stage).use_params(config_params.into());
+    let ctx = builder.main(0);
+    let range = builder.range_chip();
 
     // TODO: implement the custom circuit.
 
