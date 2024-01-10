@@ -9,7 +9,7 @@ use num_bigint::BigUint;
 
 use pallier_chip::{
     big_uint::{chip::BigUintChip, AssignedBigUint, Fresh},
-    paillier::{paillier_enc, PaillierChip},
+    paillier::PaillierChip,
 };
 
 //doubt
@@ -44,7 +44,8 @@ pub fn check_vote_enc<F: BigPrimeField, const T: usize, const RATE: usize>(
         .assign_constant(ctx, input.n_b.clone())
         .unwrap();
     let g = biguint_chip.assign_constant(ctx, input.g.clone()).unwrap();
-    let paillier_chip = PaillierChip::construct(&biguint_chip, enc_bit_len, &n, input.n_b.clone(), &g);
+    let paillier_chip =
+        PaillierChip::construct(&biguint_chip, enc_bit_len, &n, input.n_b.clone(), &g);
     let root = ctx.load_constant(input.root);
     let leaf = ctx.load_constant(input.leaf);
     let proof = ctx.load_constants(&input.proof);
@@ -55,13 +56,6 @@ pub fn check_vote_enc<F: BigPrimeField, const T: usize, const RATE: usize>(
         proof: &proof,
         helper: &helper,
     };
-    println!("vote={:?}",input.vote);
-    println!("vote_enc={:?}",input.vote_enc);
-    println!("r_enc={:?}",input.r_enc);
-    println!("n_b={:?}",input.n_b);
-    println!("g={:?}",input.g);
-
-
 
     for i in 0..input.vote.len() {
         let r = biguint_chip
@@ -70,14 +64,13 @@ pub fn check_vote_enc<F: BigPrimeField, const T: usize, const RATE: usize>(
         let cir_enc = paillier_chip
             .encrypt(ctx, input.vote[i].clone(), &r)
             .unwrap();
-        println!("cir enc={:?}",cir_enc.value());
-        println!("vote enc={:?}",input.vote_enc[i].value());
+
         biguint_chip
             .assert_equal_fresh(ctx, &cir_enc, &input.vote_enc[i])
             .unwrap();
     }
 
-//    verify_merkle_proof::<F, T, RATE>(ctx, verify_mer_inp, range);
+    verify_merkle_proof::<F, T, RATE>(ctx, verify_mer_inp, range);
 }
 
 fn dual_mux<F: ScalarField>(
@@ -103,7 +96,6 @@ pub fn verify_merkle_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
     input: Merkleinput<'_, F>,
     range: &RangeChip<F>,
 ) {
-
     let mut hasher = PoseidonHasher::<F, T, RATE>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
     let gate = range.gate();
 
@@ -119,8 +111,7 @@ pub fn verify_merkle_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
 }
 
 #[cfg(test)]
-mod test 
-{
+mod test {
 
     use halo2_base::halo2_proofs::arithmetic::Field;
     use halo2_base::halo2_proofs::halo2curves::ff::WithSmallOrderMulGroup;
@@ -152,7 +143,6 @@ mod test
     const RATE: usize = 2;
     const R_F: usize = 8;
     const R_P: usize = 57;
-    const NUM_BITS: usize = 64;
 
     pub fn merkle_help<F: BigPrimeField>(
         leavess: Vec<AssignedValue<F>>,
@@ -216,7 +206,7 @@ mod test
         const LIMB_BIT_LEN: usize = 64;
         let mut rng = thread_rng();
         let treesize = u32::pow(2, 3);
-        
+
         let vote = [
             BigUint::one(),
             BigUint::default(),
@@ -237,17 +227,13 @@ mod test
             .expect_satisfied(true)
             .run(|ctx, range| {
                 let biguint_chip = BigUintChip::construct(range, LIMB_BIT_LEN);
-                let n = biguint_chip.assign_constant(ctx, n_b.clone()).unwrap();
-                let g = biguint_chip.assign_constant(ctx, g_b.clone()).unwrap();
 
-           
                 let f_one = ctx.load_constant(Fr::ONE);
                 let f_zero = ctx.load_constant(Fr::ZERO);
-                let r_b = rng.gen_biguint(ENC_BIT_LEN as u64 * 2);
 
                 for i in 0..5 {
                     r_enc.push(rng.gen_biguint(ENC_BIT_LEN as u64));
-                   // let r = biguint_chip.assign_constant(ctx, r_enc[i].clone()).unwrap();
+                    // let r = biguint_chip.assign_constant(ctx, r_enc[i].clone()).unwrap();
                     // vote_enc.push(paillier_chip.encrypt(ctx, vote[i].clone(), &r).unwrap());
                     let val = enc_help(&n_b, &g_b, &vote[i], &r_enc[i]);
                     vote_enc.push(
@@ -262,9 +248,6 @@ mod test
                 let gate = range.gate();
                 poseidon.initialize_consts(ctx, gate);
                 let mut leaves: Vec<AssignedValue<Fr>> = vec![];
-
-                let hash = poseidon.hash_fix_len_array(ctx, gate, &[f_one]);
-                println!("hash={:?}", hash);
 
                 for i in 0..treesize {
                     let inp: AssignedValue<Fr> = if i == 0 {
@@ -304,7 +287,7 @@ mod test
                     proof: &leaf_proof,
                     helper: &leaf_helper,
                 };
-                // verify_merkle_proof::<Fr, T, RATE>(ctx, mer_input, range);
+                verify_merkle_proof::<Fr, T, RATE>(ctx, mer_input, range);
             });
     }
 
