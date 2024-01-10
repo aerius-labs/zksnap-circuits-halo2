@@ -17,7 +17,18 @@ use snark_verifier_sdk::{
     NativeLoader, Snark,
 };
 
-pub fn run<T: DeserializeOwned>(
+pub fn generate_circuit_params(k: usize, lookup_bits: usize) -> BaseCircuitParams {
+    BaseCircuitParams {
+        k,
+        num_advice_per_phase: vec![10],
+        num_lookup_advice_per_phase: vec![5],
+        num_fixed: 1,
+        lookup_bits: Some(lookup_bits),
+        num_instance_columns: 1,
+    }
+}
+
+pub fn create_snark<T: DeserializeOwned>(
     k: u32,
     circuit_params: BaseCircuitParams,
     f: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
@@ -82,4 +93,14 @@ fn create_circuit<T: DeserializeOwned>(
     }
 
     builder
+}
+
+pub fn run<T: DeserializeOwned>(
+    k: usize,
+    lookup_bits: usize,
+    f: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    inputs: T,
+) -> Snark {
+    let circuit_params = generate_circuit_params(k, lookup_bits);
+    create_snark(k as u32, circuit_params, f, inputs).unwrap()
 }
