@@ -1,155 +1,157 @@
+use ark_std::{rand::rngs::StdRng, rand::SeedableRng};
+use getset::Getters;
 use halo2_base::{
-    utils::ScalarField,
-    gates::{ circuit::builder::BaseCircuitBuilder, GateChip, GateInstructions },
+    gates::circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage},
+    halo2_proofs::{
+        halo2curves::{bn256::Bn256, grumpkin::Fq as Fr},
+        poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+    },
     AssignedValue,
 };
-use serde::Deserialize;
+use halo2_ecc::bn254::FpChip;
+use itertools::Itertools;
+use snark_verifier_sdk::{
+    halo2::aggregation::{
+        aggregate, AggregationConfigParams, BaseFieldEccChip, Halo2KzgAccumulationScheme,
+        Halo2Loader, PreprocessedAndDomainAsWitness, SnarkAggregationWitness, Svk,
+        VerifierUniversality,
+    },
+    halo2::{PoseidonTranscript, POSEIDON_SPEC},
+    snark_verifier::{
+        pcs::kzg::KzgAccumulator, util::arithmetic::fe_to_limbs, verifier::SnarkVerifier,
+    },
+    NativeLoader, PlonkSuccinctVerifier, Snark, BITS, LIMBS,
+};
+use std::mem;
 
-#[derive(Clone, Debug, Deserialize)]
-struct CircuitInput {
-    a: u64,
-    b: u64,
-    c: u64,
+#[derive(Clone, Debug, Getters)]
+pub struct AggregationCircuit {
+    pub builder: BaseCircuitBuilder<Fr>,
+    pub previous_instances: Vec<Vec<AssignedValue<Fr>>>,
+    pub preprocessed: Vec<PreprocessedAndDomainAsWitness>,
 }
 
-fn dummy_circuit1<F: ScalarField>(
-    builder: &mut BaseCircuitBuilder<F>,
-    input: CircuitInput,
-    make_public: &mut Vec<AssignedValue<F>>
-) {
-    let ctx = builder.main(0);
-    let gate = GateChip::<F>::default();
+pub fn aggregator<AS>(
+    stage: CircuitBuilderStage,
+    config_params: AggregationConfigParams,
+    params: &ParamsKZG<Bn256>,
+    snarks: impl IntoIterator<Item = Snark>,
+    universality: VerifierUniversality,
+) -> AggregationCircuit
+where
+    AS: for<'a> Halo2KzgAccumulationScheme<'a>,
+{
+    // This builder can be used to instantiate the custom circuit and then will be passed to the aggregation circuit.
+    let mut builder = BaseCircuitBuilder::<Fr>::from_stage(stage).use_params(config_params.into());
 
-    let a = ctx.load_witness(F::from(input.a));
-    let b = ctx.load_witness(F::from(input.b));
+    // TODO: implement the custom circuit.
 
-    let c = ctx.load_witness(F::from(input.c));
-    make_public.push(c.clone());
+    let (builder, previous_instances, preprocessed) =
+        verify_snarks::<AS>(&mut builder, params, snarks, universality);
 
-    let a2 = gate.mul(ctx, a.clone(), a.clone());
-    let b2 = gate.mul(ctx, b.clone(), b.clone());
-    let res = gate.mul(ctx, a2, b2);
-
-    let is_equal = gate.is_equal(ctx, res, c);
-    assert_eq!(is_equal.value(), &F::from(1));
+    AggregationCircuit {
+        builder: builder.clone(),
+        previous_instances,
+        preprocessed,
+    }
 }
 
-fn dummy_circuit2<F: ScalarField>(
-    builder: &mut BaseCircuitBuilder<F>,
-    input: CircuitInput,
-    make_public: &mut Vec<AssignedValue<F>>
-) {
-    let ctx = builder.main(0);
-    let gate = GateChip::<F>::default();
+fn verify_snarks<'v, AS>(
+    builder: &'v mut BaseCircuitBuilder<Fr>,
+    params: &ParamsKZG<Bn256>,
+    snarks: impl IntoIterator<Item = Snark>,
+    universality: VerifierUniversality,
+) -> (
+    &'v mut BaseCircuitBuilder<Fr>,
+    Vec<Vec<AssignedValue<Fr>>>,
+    Vec<PreprocessedAndDomainAsWitness>,
+)
+where
+    AS: for<'a> Halo2KzgAccumulationScheme<'a>,
+{
+    let svk: Svk = params.get_g()[0].into();
+    let snarks = snarks.into_iter().collect_vec();
 
-    let a = ctx.load_witness(F::from(input.a));
-    let b = ctx.load_witness(F::from(input.b));
-    let c = ctx.load_witness(F::from(input.c));
+    let mut transcript_read =
+        PoseidonTranscript::<NativeLoader, &[u8]>::from_spec(&[], POSEIDON_SPEC.clone());
+    let accumulators = snarks
+        .iter()
+        .flat_map(|snark| {
+            transcript_read.new_stream(snark.proof());
+            let proof = PlonkSuccinctVerifier::<AS>::read_proof(
+                &svk,
+                &snark.protocol,
+                &snark.instances,
+                &mut transcript_read,
+            )
+            .unwrap();
+            PlonkSuccinctVerifier::<AS>::verify(&svk, &snark.protocol, &snark.instances, &proof)
+                .unwrap()
+        })
+        .collect_vec();
 
-    make_public.push(a.clone());
-    make_public.push(b.clone());
-    make_public.push(c.clone());
-
-    let res = gate.mul(ctx, a, b);
-
-    let is_equal = gate.is_equal(ctx, res, c);
-    assert_eq!(is_equal.value(), &F::from(1));
-}
-
-#[cfg(test)]
-mod test {
-    use ark_std::{ start_timer, end_timer };
-    use halo2_base::{
-        gates::circuit::{ BaseCircuitParams, CircuitBuilderStage, builder::BaseCircuitBuilder },
-        utils::fs::gen_srs,
-        AssignedValue,
-        halo2_proofs::halo2curves::grumpkin::Fq as Fr,
+    let (_accumulator, as_proof) = {
+        let mut transcript_write =
+            PoseidonTranscript::<NativeLoader, Vec<u8>>::from_spec(vec![], POSEIDON_SPEC.clone());
+        let rng = StdRng::from_entropy();
+        let accumulator = AS::create_proof(
+            &Default::default(),
+            &accumulators,
+            &mut transcript_write,
+            rng,
+        )
+        .unwrap();
+        (accumulator, transcript_write.finalize())
     };
-    use serde::de::DeserializeOwned;
-    use snark_verifier_sdk::{
-        Snark,
-        halo2::{
-            aggregation::{ AggregationCircuit, AggregationConfigParams, VerifierUniversality },
-            gen_snark_shplonk,
-        },
-        SHPLONK,
-        gen_pk,
-    };
 
-    use crate::utils::run;
+    // create halo2loader
+    let range = builder.range_chip();
+    let fp_chip = FpChip::<Fr>::new(&range, BITS, LIMBS);
+    let ecc_chip = BaseFieldEccChip::new(&fp_chip);
+    // Take the phase 0 pool from `builder`; it needs to be owned by loader.
+    // We put it back later (below), so it should have same effect as just mutating `builder.pool(0)`.
+    let pool = mem::take(builder.pool(0));
+    // range_chip has shared reference to LookupAnyManager, with shared CopyConstraintManager
+    // pool has shared reference to CopyConstraintManager
+    let loader = Halo2Loader::new(ecc_chip, pool);
 
-    use super::{ dummy_circuit1, dummy_circuit2 };
+    // run witness and copy constraint generation
+    let SnarkAggregationWitness {
+        previous_instances,
+        accumulator,
+        preprocessed,
+    } = aggregate::<AS>(&svk, &loader, &snarks, as_proof.as_slice(), universality);
+    let lhs = accumulator.lhs.assigned();
+    let rhs = accumulator.rhs.assigned();
+    let accumulator = lhs
+        .x()
+        .limbs()
+        .iter()
+        .chain(lhs.y().limbs().iter())
+        .chain(rhs.x().limbs().iter())
+        .chain(rhs.y().limbs().iter())
+        .copied()
+        .collect_vec();
 
-    fn generate_dummy_snark<T: DeserializeOwned>(
-        k: u32,
-        input: T,
-        circuit: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>)
-    ) -> Snark {
-        let circuit_params = BaseCircuitParams {
-            k: k as usize,
-            num_advice_per_phase: vec![10],
-            num_lookup_advice_per_phase: vec![0],
-            num_fixed: 0,
-            lookup_bits: None,
-            num_instance_columns: 1,
-        };
-
-        run(k, circuit_params, circuit, input).unwrap()
+    #[cfg(debug_assertions)]
+    {
+        let KzgAccumulator { lhs, rhs } = _accumulator;
+        let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
+            .map(fe_to_limbs::<_, Fr, LIMBS, BITS>)
+            .concat();
+        for (lhs, rhs) in instances.iter().zip(accumulator.iter()) {
+            assert_eq!(lhs, rhs.value());
+        }
     }
+    // put back `pool` into `builder`
+    *builder.pool(0) = loader.take_ctx();
+    assert_eq!(
+        builder.assigned_instances.len(),
+        1,
+        "AggregationCircuit must have exactly 1 instance column"
+    );
+    // expose accumulator as public instances
+    builder.assigned_instances[0] = accumulator;
 
-    #[test]
-    fn test_dummy_circuit() {
-        let k = 8 as u32;
-
-        let a = 32;
-        let b = 64;
-        let c1 = a * a * b * b;
-        let c2 = a * b;
-        let input1 = super::CircuitInput { a, b, c: c1 };
-        let input2 = super::CircuitInput { a, b, c: c2 };
-
-        let _snark1 = generate_dummy_snark(k, input1, dummy_circuit1);
-        let _snark2 = generate_dummy_snark(k, input2, dummy_circuit2);
-    }
-
-    #[test]
-    fn test_aggregation() {
-        let k_dummy = 8 as u32;
-        let k_agg = 14 as u32;
-
-        let a = 32;
-        let b = 64;
-        let c1 = a * a * b * b;
-        let c2 = a * b;
-        let input1 = super::CircuitInput { a, b, c: c1 };
-        let input2 = super::CircuitInput { a, b, c: c2 };
-
-        let snark1 = generate_dummy_snark(k_dummy, input1, dummy_circuit1);
-        let snark2 = generate_dummy_snark(k_dummy, input2, dummy_circuit2);
-
-        let lookup_bits = (k_agg as usize) - 1;
-        let params = gen_srs(k_agg);
-        let mut agg_circuit = AggregationCircuit::new::<SHPLONK>(
-            CircuitBuilderStage::Keygen,
-            AggregationConfigParams { degree: k_agg, lookup_bits, ..Default::default() },
-            &params,
-            vec![snark1.clone(), snark2.clone()],
-            VerifierUniversality::Full
-        );
-        let agg_config: AggregationConfigParams = agg_circuit.calculate_params(Some(10));
-
-        let start0 = start_timer!(|| "gen vk & pk");
-        let pk = gen_pk(&params, &agg_circuit, None);
-        end_timer!(start0);
-        let break_points = agg_circuit.break_points();
-
-        let agg_circuit = AggregationCircuit::new::<SHPLONK>(
-            CircuitBuilderStage::Prover,
-            agg_config,
-            &params,
-            vec![snark1, snark2],
-            VerifierUniversality::Full
-        ).use_break_points(break_points.clone());
-        let _snark = gen_snark_shplonk(&params, &pk, agg_circuit, None::<&str>);
-    }
+    (builder, previous_instances, preprocessed)
 }

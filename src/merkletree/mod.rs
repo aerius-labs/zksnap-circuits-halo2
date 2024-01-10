@@ -1,12 +1,11 @@
 pub mod utils;
 
 use halo2_base::{
-    poseidon::hasher::{ spec::OptimizedPoseidonSpec, PoseidonHasher },
-    utils::{ ScalarField, BigPrimeField },
-    AssignedValue,
-    Context,
-    gates::{ GateChip, RangeChip, GateInstructions, RangeInstructions },
+    gates::{GateChip, GateInstructions, RangeChip, RangeInstructions},
     halo2_proofs::plonk::Error,
+    poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher},
+    utils::{BigPrimeField, ScalarField},
+    AssignedValue, Context,
 };
 
 fn dual_mux<F: ScalarField>(
@@ -14,7 +13,7 @@ fn dual_mux<F: ScalarField>(
     gate: &GateChip<F>,
     a: &AssignedValue<F>,
     b: &AssignedValue<F>,
-    switch: &AssignedValue<F>
+    switch: &AssignedValue<F>,
 ) -> [AssignedValue<F>; 2] {
     gate.assert_bit(ctx, *switch);
 
@@ -32,7 +31,7 @@ pub fn verify_merkle_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
     root: &AssignedValue<F>,
     leaf: &AssignedValue<F>,
     proof: &[AssignedValue<F>],
-    helper: &[AssignedValue<F>]
+    helper: &[AssignedValue<F>],
 ) -> Result<AssignedValue<F>, Error> {
     let gate = range.gate();
     let spec = OptimizedPoseidonSpec::<F, T, RATE>::new::<8, 56, 0>();

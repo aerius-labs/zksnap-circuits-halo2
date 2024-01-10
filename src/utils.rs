@@ -1,30 +1,27 @@
 use halo2_base::{
-    gates::circuit::{ CircuitBuilderStage, BaseCircuitParams, builder::BaseCircuitBuilder },
+    gates::circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, CircuitBuilderStage},
     halo2_proofs::{
-        poly::kzg::{
-            commitment::KZGCommitmentScheme,
-            multiopen::VerifierSHPLONK,
-            strategy::SingleStrategy,
-        },
-        halo2curves::{ bn256::Bn256, grumpkin::Fq as Fr },
+        halo2curves::{bn256::Bn256, grumpkin::Fq as Fr},
         plonk::verify_proof,
+        poly::kzg::{
+            commitment::KZGCommitmentScheme, multiopen::VerifierSHPLONK, strategy::SingleStrategy,
+        },
     },
-    AssignedValue,
     utils::fs::gen_srs,
+    AssignedValue,
 };
 use serde::de::DeserializeOwned;
 use snark_verifier_sdk::{
     gen_pk,
-    halo2::{ gen_snark_shplonk, PoseidonTranscript },
-    NativeLoader,
-    Snark,
+    halo2::{gen_snark_shplonk, PoseidonTranscript},
+    NativeLoader, Snark,
 };
 
 pub fn run<T: DeserializeOwned>(
     k: u32,
     circuit_params: BaseCircuitParams,
     f: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
-    inputs: T
+    inputs: T,
 ) -> Result<Snark, ()> {
     // Generate params for the circuit
     let params = gen_srs(k);
@@ -48,8 +45,9 @@ pub fn run<T: DeserializeOwned>(
         VerifierSHPLONK<'_, Bn256>,
         _,
         _,
-        SingleStrategy<'_, Bn256>
-    >(&params, &vk, strategy, &[&[instance]], &mut transcript).unwrap();
+        SingleStrategy<'_, Bn256>,
+    >(&params, &vk, strategy, &[&[instance]], &mut transcript)
+    .unwrap();
 
     Ok(proof)
 }
@@ -58,7 +56,7 @@ fn create_circuit<T: DeserializeOwned>(
     circuit_params: BaseCircuitParams,
     f: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
     inputs: T,
-    stage: CircuitBuilderStage
+    stage: CircuitBuilderStage,
 ) -> BaseCircuitBuilder<Fr> {
     let mut builder = BaseCircuitBuilder::new(false).use_params(circuit_params);
 
@@ -68,7 +66,11 @@ fn create_circuit<T: DeserializeOwned>(
     let mut assigned_instances = vec![];
     f(&mut builder, inputs, &mut assigned_instances);
     if !assigned_instances.is_empty() {
-        assert_eq!(builder.assigned_instances.len(), 1, "num_instance_columns != 1");
+        assert_eq!(
+            builder.assigned_instances.len(),
+            1,
+            "num_instance_columns != 1"
+        );
         builder.assigned_instances[0] = assigned_instances;
     }
 
