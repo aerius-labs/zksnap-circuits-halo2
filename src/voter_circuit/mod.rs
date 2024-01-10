@@ -1,6 +1,6 @@
 use halo2_base::{
     gates::{GateChip, GateInstructions, RangeChip, RangeInstructions},
-    halo2_proofs::plonk::Error,
+    halo2_proofs::{plonk::Error,circuit::Value},
     poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher},
     utils::{biguint_to_fe, BigPrimeField, ScalarField},
     AssignedValue, Context,
@@ -11,31 +11,33 @@ use pallier_chip::{
     big_uint::{chip::BigUintChip, AssignedBigUint, Fresh},
     paillier::PaillierChip,
 };
+mod utils;
 
-//doubt
-//whether to constrain r_enc
 
-pub struct VoterInp<F: BigPrimeField> {
+
+pub struct VoterInput<F: BigPrimeField> {
     vote: Vec<BigUint>,
-    vote_enc: Vec<AssignedBigUint<F, Fresh>>,
+    vote_enc: Vec<BigUint>,
     r_enc: Vec<BigUint>,
     n_b: BigUint,
     g: BigUint,
     root: F,
     leaf: F,
-    proof: Vec<F>,
-    helper: Vec<F>,
+    sibling: Vec<F>,
+    bit_idx: Vec<F>,
 }
+
 pub struct Merkleinput<'a, F: BigPrimeField> {
     root: &'a AssignedValue<F>,
     leaf: &'a AssignedValue<F>,
-    proof: &'a [AssignedValue<F>],
-    helper: &'a [AssignedValue<F>],
+    sibling: &'a [AssignedValue<F>],
+    bit_idx: &'a [AssignedValue<F>],
 }
-pub fn check_vote_enc<F: BigPrimeField, const T: usize, const RATE: usize>(
+
+pub fn voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
     ctx: &mut Context<F>,
-    input: VoterInp<F>,
     range: &RangeChip<F>,
+    input: VoterInput<F>,
     limb_bit_len: usize,
     enc_bit_len: usize,
 ) {
@@ -44,32 +46,37 @@ pub fn check_vote_enc<F: BigPrimeField, const T: usize, const RATE: usize>(
         .assign_constant(ctx, input.n_b.clone())
         .unwrap();
     let g = biguint_chip.assign_constant(ctx, input.g.clone()).unwrap();
-    let paillier_chip =
+    let pallier_chip =
         PaillierChip::construct(&biguint_chip, enc_bit_len, &n, input.n_b.clone(), &g);
-    let root = ctx.load_constant(input.root);
-    let leaf = ctx.load_constant(input.leaf);
-    let proof = ctx.load_constants(&input.proof);
-    let helper = ctx.load_constants(&input.helper);
+    let mut siblings:Vec<AssignedValue<F>>=vec![];
+    let mut bit_idx:Vec<AssignedValue<F>>=vec![];
+    let root = ctx.load_witness(input.root);
+    let leaf = ctx.load_witness(input.leaf);
+    for i in 0..input.sibling.len(){
+     siblings.push(ctx.load_witness(input.sibling[i]));
+     bit_idx.push(ctx.load_witness(input.bit_idx[i]));
+    }
+    
     let verify_mer_inp = Merkleinput {
         root: &root,
         leaf: &leaf,
-        proof: &proof,
-        helper: &helper,
+        sibling: &siblings,
+        bit_idx: &bit_idx,
     };
 
     for i in 0..input.vote.len() {
         let r = biguint_chip
-            .assign_constant(ctx, input.r_enc[i].clone())
-            .unwrap();
-        let cir_enc = paillier_chip
+            .assign_integer(ctx, Value::known(input.r_enc[i].clone()), enc_bit_len).unwrap();
+        let cir_enc = pallier_chip
             .encrypt(ctx, input.vote[i].clone(), &r)
             .unwrap();
+        let vote_enc=biguint_chip.assign_integer(ctx, Value::known(input.vote_enc[i].clone()), enc_bit_len*2).unwrap();
 
         biguint_chip
-            .assert_equal_fresh(ctx, &cir_enc, &input.vote_enc[i])
+            .assert_equal_fresh(ctx, &cir_enc, &vote_enc)
             .unwrap();
     }
-
+//To verify whether the voter public key is whitelisted
     verify_merkle_proof::<F, T, RATE>(ctx, verify_mer_inp, range);
 }
 
@@ -103,7 +110,7 @@ pub fn verify_merkle_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
 
     let mut computed_hash = ctx.load_witness(*input.leaf.value());
 
-    for (proof_element, helper) in input.proof.iter().zip(input.helper.iter()) {
+    for (proof_element, helper) in input.sibling.iter().zip(input.bit_idx.iter()) {
         let inp = dual_mux(ctx, gate, &computed_hash, proof_element, helper);
         computed_hash = hasher.hash_fix_len_array(ctx, gate, &inp);
     }
@@ -117,7 +124,8 @@ mod test {
     use halo2_base::halo2_proofs::halo2curves::ff::WithSmallOrderMulGroup;
     use halo2_base::utils::testing::base_test;
 
-    use super::{check_vote_enc, verify_merkle_proof, Merkleinput, VoterInp};
+    use super::{voter_circuit, verify_merkle_proof, Merkleinput, VoterInput};
+    use super::utils::{merkle_help,get_proof,enc_help};
     use halo2_base::halo2_proofs::halo2curves::bn256;
     use halo2_base::{
         gates::{
@@ -138,67 +146,15 @@ mod test {
     };
     use rand::thread_rng;
 
+    
+
     #[warn(dead_code)]
     const T: usize = 3;
     const RATE: usize = 2;
     const R_F: usize = 8;
     const R_P: usize = 57;
 
-    pub fn merkle_help<F: BigPrimeField>(
-        leavess: Vec<AssignedValue<F>>,
-        ctx: &mut Context<F>,
-    ) -> Vec<Vec<AssignedValue<F>>> {
-        let mut leaves = leavess.clone();
-        let mut help_sib: Vec<Vec<AssignedValue<F>>> = vec![];
-        help_sib.push(leaves.clone());
-
-        while leaves.len() > 1 {
-            let mut nxtlevel: Vec<AssignedValue<F>> = vec![];
-            for (i, _) in leaves.iter().enumerate().step_by(2) {
-                let left = leaves[i];
-                let right = leaves[i + 1];
-                let gate = GateChip::<F>::default();
-                let mut poseidon =
-                    PoseidonHasher::<F, T, RATE>::new(OptimizedPoseidonSpec::new::<R_F, R_P, 0>());
-
-                poseidon.initialize_consts(ctx, &gate);
-                nxtlevel.push(poseidon.hash_fix_len_array(ctx, &gate, &[left, right]));
-            }
-            help_sib.push(nxtlevel.clone());
-            leaves = nxtlevel;
-        }
-
-        help_sib
-    }
-    pub fn get_proof<F: BigPrimeField>(
-        index: usize,
-        helper: Vec<Vec<AssignedValue<F>>>,
-        f_zero: AssignedValue<F>,
-        f_one: AssignedValue<F>,
-    ) -> (Vec<AssignedValue<F>>, Vec<AssignedValue<F>>) {
-        let mut proof: Vec<AssignedValue<F>> = vec![];
-        let mut proof_helper: Vec<AssignedValue<F>> = vec![];
-        let mut cur_idx = index as u32;
-
-        for i in 0..helper.len() {
-            let level = helper[i].clone();
-            let isleftleaf = cur_idx % 2 == 0;
-            let sibling_idx = if isleftleaf { cur_idx + 1 } else { cur_idx - 1 };
-            let sibling = level[sibling_idx as usize];
-            proof.push(sibling);
-            proof_helper.push(if isleftleaf { f_one } else { f_zero });
-
-            cur_idx = cur_idx / 2 as u32;
-        }
-
-        (proof, proof_helper)
-    }
-    pub fn enc_help(n: &BigUint, g: &BigUint, m: &BigUint, r: &BigUint) -> BigUint {
-        let n2 = n * n;
-        let gm = g.modpow(m, &n2);
-        let rn = r.modpow(n, &n2);
-        (gm * rn) % n2
-    }
+   
     #[test]
     fn test_vote_circuit() {
         const ENC_BIT_LEN: usize = 128;
@@ -218,14 +174,13 @@ mod test {
         let n_b = rng.gen_biguint(ENC_BIT_LEN as u64);
         let g_b = rng.gen_biguint(ENC_BIT_LEN as u64);
         let mut r_enc: Vec<BigUint> = vec![];
-        let mut vote_enc: Vec<AssignedBigUint<Fr, Fresh>> = vec![];
+        let mut vote_enc: Vec<BigUint> = vec![];
 
         base_test()
             .k(16)
             .lookup_bits(15)
             .expect_satisfied(true)
             .run(|ctx, range| {
-                let biguint_chip = BigUintChip::construct(range, LIMB_BIT_LEN);
 
                 let f_one = ctx.load_constant(Fr::ONE);
                 let f_zero = ctx.load_constant(Fr::ZERO);
@@ -233,11 +188,7 @@ mod test {
                 for i in 0..5 {
                     r_enc.push(rng.gen_biguint(ENC_BIT_LEN as u64));
                     let val = enc_help(&n_b, &g_b, &vote[i], &r_enc[i]);
-                    vote_enc.push(
-                        biguint_chip
-                            .assign_integer(ctx, Value::known(val), ENC_BIT_LEN * 2)
-                            .unwrap(),
-                    );
+                    vote_enc.push(val);
                 }
 
                 let mut poseidon =
@@ -254,18 +205,18 @@ mod test {
                     };
                     leaves.push(poseidon.hash_var_len_array(ctx, range, &[inp], f_one));
                 }
-                let mut helper = merkle_help::<Fr>(leaves.clone(), ctx);
+                let mut helper = merkle_help::<Fr,T,RATE>(leaves.clone(), ctx);
                 let root = helper.pop().unwrap()[0];
 
-                let (leaf_proof, leaf_helper) = get_proof(0, helper, f_zero, f_one);
-                let mut proof: Vec<Fr> = vec![];
-                let mut helper: Vec<Fr> = vec![];
+                let (leaf_sibling, leaf_bit_idx) = get_proof(0, helper, f_zero, f_one);
+                let mut sibling: Vec<Fr> = vec![];
+                let mut bit_idx: Vec<Fr> = vec![];
 
-                for i in 0..leaf_proof.len() {
-                    proof.push(*leaf_proof[i].value());
-                    helper.push(*leaf_helper[i].value());
+                for i in 0..leaf_sibling.len() {
+                    sibling.push(*leaf_sibling[i].value());
+                    bit_idx.push(*leaf_bit_idx[i].value());
                 }
-                let input = VoterInp {
+                let input = VoterInput {
                     vote,
                     vote_enc,
                     r_enc,
@@ -273,16 +224,16 @@ mod test {
                     g: g_b,
                     root: *root.value(),
                     leaf: *leaves[0].value(),
-                    proof,
-                    helper,
+                    sibling,
+                    bit_idx,
                 };
 
-                check_vote_enc::<Fr, T, RATE>(ctx, input, range, LIMB_BIT_LEN, ENC_BIT_LEN);
+                voter_circuit::<Fr, T, RATE>(ctx,range, input,  LIMB_BIT_LEN, ENC_BIT_LEN);
                 let mer_input = Merkleinput::<Fr> {
                     root: &root,
                     leaf: &leaves[0],
-                    proof: &leaf_proof,
-                    helper: &leaf_helper,
+                    sibling: &leaf_sibling,
+                    bit_idx: &leaf_bit_idx,
                 };
                 verify_merkle_proof::<Fr, T, RATE>(ctx, mer_input, range);
             });

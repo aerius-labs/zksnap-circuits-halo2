@@ -1,1 +1,2 @@
-pub mod voter;
+pub mod voter_circuit;
+
