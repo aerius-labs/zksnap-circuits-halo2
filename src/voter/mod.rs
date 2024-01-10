@@ -186,7 +186,6 @@ mod test {
             let sibling_idx = if isleftleaf { cur_idx + 1 } else { cur_idx - 1 };
             let sibling = level[sibling_idx as usize];
             proof.push(sibling);
-            //todo
             proof_helper.push(if isleftleaf { f_one } else { f_zero });
 
             cur_idx = cur_idx / 2 as u32;
@@ -233,8 +232,6 @@ mod test {
 
                 for i in 0..5 {
                     r_enc.push(rng.gen_biguint(ENC_BIT_LEN as u64));
-                    // let r = biguint_chip.assign_constant(ctx, r_enc[i].clone()).unwrap();
-                    // vote_enc.push(paillier_chip.encrypt(ctx, vote[i].clone(), &r).unwrap());
                     let val = enc_help(&n_b, &g_b, &vote[i], &r_enc[i]);
                     vote_enc.push(
                         biguint_chip
@@ -290,7 +287,4 @@ mod test {
                 verify_merkle_proof::<Fr, T, RATE>(ctx, mer_input, range);
             });
     }
-
-    // #[test]
-    // fn test_merkle_circuit() {}
 }
