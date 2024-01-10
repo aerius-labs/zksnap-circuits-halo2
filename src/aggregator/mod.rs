@@ -123,7 +123,7 @@ where
     } = aggregate::<AS>(&svk, &loader, &snarks, as_proof.as_slice(), universality);
     let lhs = accumulator.lhs.assigned();
     let rhs = accumulator.rhs.assigned();
-    let accumulator = lhs
+    let mut accumulator = lhs
         .x()
         .limbs()
         .iter()
@@ -151,7 +151,7 @@ where
         "AggregationCircuit must have exactly 1 instance column"
     );
     // expose accumulator as public instances
-    builder.assigned_instances[0] = accumulator;
+    builder.assigned_instances[0].append(&mut accumulator);
 
     (builder, previous_instances, preprocessed)
 }
