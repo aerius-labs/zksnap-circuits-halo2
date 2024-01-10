@@ -131,7 +131,7 @@ mod tests {
             },
         );
 
-        let k = 15u32;
+        let k = 16u32;
         let lookup_bits = (k - 1) as usize;
 
         let params = gen_srs(k);
