@@ -22,7 +22,7 @@ use pallier_chip::{
 };
 use rand::thread_rng;
 
-pub fn merkle_help<F: BigPrimeField,const T:usize,const RATE:usize>(
+pub fn merkle_help<F: BigPrimeField, const T: usize, const RATE: usize>(
     leavess: Vec<AssignedValue<F>>,
     ctx: &mut Context<F>,
 ) -> Vec<Vec<AssignedValue<F>>> {

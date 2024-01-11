@@ -1,6 +1,6 @@
 use halo2_base::{
     gates::{GateChip, GateInstructions, RangeChip, RangeInstructions},
-    halo2_proofs::{plonk::Error,circuit::Value},
+    halo2_proofs::{circuit::Value, plonk::Error},
     poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher},
     utils::{biguint_to_fe, BigPrimeField, ScalarField},
     AssignedValue, Context,
@@ -13,25 +13,20 @@ use pallier_chip::{
 };
 mod utils;
 
-
+pub struct EncryptionPublicKey {
+    n:BigUint,
+    g:BigUint
+}
 
 pub struct VoterInput<F: BigPrimeField> {
     vote: Vec<BigUint>,
     vote_enc: Vec<BigUint>,
     r_enc: Vec<BigUint>,
-    n_b: BigUint,
-    g: BigUint,
-    root: F,
+    pk_enc:EncryptionPublicKey,
+    membership_root: F,
     leaf: F,
-    sibling: Vec<F>,
-    bit_idx: Vec<F>,
-}
-
-pub struct Merkleinput<'a, F: BigPrimeField> {
-    root: &'a AssignedValue<F>,
-    leaf: &'a AssignedValue<F>,
-    sibling: &'a [AssignedValue<F>],
-    bit_idx: &'a [AssignedValue<F>],
+    membership_proof: Vec<F>,
+    membership_proof_helper: Vec<F>,
 }
 
 pub fn voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
@@ -42,42 +37,56 @@ pub fn voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
     enc_bit_len: usize,
 ) {
     let biguint_chip = BigUintChip::construct(range, limb_bit_len);
-    let n = biguint_chip
-        .assign_constant(ctx, input.n_b.clone())
+    let n_assign = biguint_chip
+        .assign_integer(ctx, Value::known(input.pk_enc.n.clone()), enc_bit_len)
         .unwrap();
-    let g = biguint_chip.assign_constant(ctx, input.g.clone()).unwrap();
+    let g = biguint_chip
+        .assign_integer(ctx, Value::known(input.pk_enc.g.clone()), enc_bit_len)
+        .unwrap();
     let pallier_chip =
-        PaillierChip::construct(&biguint_chip, enc_bit_len, &n, input.n_b.clone(), &g);
-    let mut siblings:Vec<AssignedValue<F>>=vec![];
-    let mut bit_idx:Vec<AssignedValue<F>>=vec![];
-    let root = ctx.load_witness(input.root);
+        PaillierChip::construct(&biguint_chip, enc_bit_len, &n_assign, input.pk_enc.n.clone(), &g);
+    let mut membership_proof = Vec::<AssignedValue<F>>::new();
+    let mut membership_proof_helper = Vec::<AssignedValue<F>>::new();
+    let membership_root = ctx.load_witness(input.membership_root);
     let leaf = ctx.load_witness(input.leaf);
-    for i in 0..input.sibling.len(){
-     siblings.push(ctx.load_witness(input.sibling[i]));
-     bit_idx.push(ctx.load_witness(input.bit_idx[i]));
+    for i in 0..input.membership_proof.len() {
+        membership_proof.push(ctx.load_witness(input.membership_proof[i]));
+        membership_proof_helper.push(ctx.load_witness(input.membership_proof_helper[i]));
     }
-    
-    let verify_mer_inp = Merkleinput {
-        root: &root,
-        leaf: &leaf,
-        sibling: &siblings,
-        bit_idx: &bit_idx,
-    };
 
     for i in 0..input.vote.len() {
         let r = biguint_chip
-            .assign_integer(ctx, Value::known(input.r_enc[i].clone()), enc_bit_len).unwrap();
+            .assign_integer(ctx, Value::known(input.r_enc[i].clone()), enc_bit_len)
+            .unwrap();
         let cir_enc = pallier_chip
             .encrypt(ctx, input.vote[i].clone(), &r)
             .unwrap();
-        let vote_enc=biguint_chip.assign_integer(ctx, Value::known(input.vote_enc[i].clone()), enc_bit_len*2).unwrap();
+        let vote_enc = biguint_chip
+            .assign_integer(
+                ctx,
+                Value::known(input.vote_enc[i].clone()),
+                enc_bit_len * 2,
+            )
+            .unwrap();
 
         biguint_chip
             .assert_equal_fresh(ctx, &cir_enc, &vote_enc)
             .unwrap();
     }
-//To verify whether the voter public key is whitelisted
-    verify_merkle_proof::<F, T, RATE>(ctx, verify_mer_inp, range);
+    let mut hasher = PoseidonHasher::<F, T, RATE>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
+    let gate = range.gate();
+
+    hasher.initialize_consts(ctx, gate);
+    //To verify whether the voter public key is whitelisted
+    verify_membership_proof(
+        ctx,
+        &membership_root,
+        &leaf,
+        &membership_proof,
+        &membership_proof_helper,
+        range,
+        &hasher,
+    );
 }
 
 fn dual_mux<F: ScalarField>(
@@ -98,23 +107,24 @@ fn dual_mux<F: ScalarField>(
     [left, right]
 }
 
-pub fn verify_merkle_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
+pub fn verify_membership_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
     ctx: &mut Context<F>,
-    input: Merkleinput<'_, F>,
+    root: &AssignedValue<F>,
+    leaf: &AssignedValue<F>,
+    proof: &[AssignedValue<F>],
+    helper: &[AssignedValue<F>],
     range: &RangeChip<F>,
+    hasher: &PoseidonHasher<F, T, RATE>,
 ) {
-    let mut hasher = PoseidonHasher::<F, T, RATE>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
     let gate = range.gate();
 
-    hasher.initialize_consts(ctx, gate);
+    let mut computed_hash = ctx.load_witness(*leaf.value());
 
-    let mut computed_hash = ctx.load_witness(*input.leaf.value());
-
-    for (proof_element, helper) in input.sibling.iter().zip(input.bit_idx.iter()) {
+    for (proof_element, helper) in proof.iter().zip(helper.iter()) {
         let inp = dual_mux(ctx, gate, &computed_hash, proof_element, helper);
         computed_hash = hasher.hash_fix_len_array(ctx, gate, &inp);
     }
-    ctx.constrain_equal(&computed_hash, input.root);
+    ctx.constrain_equal(&computed_hash, root);
 }
 
 #[cfg(test)]
@@ -122,10 +132,11 @@ mod test {
 
     use halo2_base::halo2_proofs::arithmetic::Field;
     use halo2_base::halo2_proofs::halo2curves::ff::WithSmallOrderMulGroup;
+    use halo2_ecc::*;
     use halo2_base::utils::testing::base_test;
 
-    use super::{voter_circuit, verify_merkle_proof, Merkleinput, VoterInput};
-    use super::utils::{merkle_help,get_proof,enc_help};
+    use super::utils::{enc_help, get_proof, merkle_help};
+    use super::{verify_membership_proof, voter_circuit, VoterInput,EncryptionPublicKey};
     use halo2_base::halo2_proofs::halo2curves::bn256;
     use halo2_base::{
         gates::{
@@ -146,15 +157,12 @@ mod test {
     };
     use rand::thread_rng;
 
-    
-
     #[warn(dead_code)]
     const T: usize = 3;
     const RATE: usize = 2;
     const R_F: usize = 8;
     const R_P: usize = 57;
 
-   
     #[test]
     fn test_vote_circuit() {
         const ENC_BIT_LEN: usize = 128;
@@ -181,7 +189,6 @@ mod test {
             .lookup_bits(15)
             .expect_satisfied(true)
             .run(|ctx, range| {
-
                 let f_one = ctx.load_constant(Fr::ONE);
                 let f_zero = ctx.load_constant(Fr::ZERO);
 
@@ -205,7 +212,7 @@ mod test {
                     };
                     leaves.push(poseidon.hash_var_len_array(ctx, range, &[inp], f_one));
                 }
-                let mut helper = merkle_help::<Fr,T,RATE>(leaves.clone(), ctx);
+                let mut helper = merkle_help::<Fr, T, RATE>(leaves.clone(), ctx);
                 let root = helper.pop().unwrap()[0];
 
                 let (leaf_sibling, leaf_bit_idx) = get_proof(0, helper, f_zero, f_one);
@@ -216,26 +223,23 @@ mod test {
                     sibling.push(*leaf_sibling[i].value());
                     bit_idx.push(*leaf_bit_idx[i].value());
                 }
+                let pk_enc=EncryptionPublicKey{
+                    n:n_b,
+                    g:g_b
+                };
                 let input = VoterInput {
                     vote,
                     vote_enc,
                     r_enc,
-                    n_b,
-                    g: g_b,
-                    root: *root.value(),
+                    pk_enc,
+                    membership_root: *root.value(),
                     leaf: *leaves[0].value(),
-                    sibling,
-                    bit_idx,
+                    membership_proof: sibling,
+                    membership_proof_helper: bit_idx,
                 };
 
-                voter_circuit::<Fr, T, RATE>(ctx,range, input,  LIMB_BIT_LEN, ENC_BIT_LEN);
-                let mer_input = Merkleinput::<Fr> {
-                    root: &root,
-                    leaf: &leaves[0],
-                    sibling: &leaf_sibling,
-                    bit_idx: &leaf_bit_idx,
-                };
-                verify_merkle_proof::<Fr, T, RATE>(ctx, mer_input, range);
+                voter_circuit::<Fr, T, RATE>(ctx, range, input, LIMB_BIT_LEN, ENC_BIT_LEN);
+
             });
     }
 }
