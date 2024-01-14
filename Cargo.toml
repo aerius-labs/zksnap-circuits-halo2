@@ -9,6 +9,7 @@ edition = "2021"
 halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib.git" }
 halo2-ecc = { git = "https://github.com/axiom-crypto/halo2-lib.git" }
 pallier-chip = { git = "https://github.com/aerius-labs/pallier-halo2.git" , branch = "feat/pallier-add" }
+pse-poseidon = { git = "https://github.com/aerius-labs/pse-poseidon.git", branch = "feat/stateless-hash" }
 
 poseidon-rs = "0.0.10"
 num-bigint = "0.4.4"
@@ -16,3 +17,4 @@ num-traits = "0.2.17"
 rand = "0.8.5"
 serde = "1.0.193"
 bigint = "4.4.3"
+rand_core = "0.6.4"
