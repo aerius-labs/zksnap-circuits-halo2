@@ -13,7 +13,7 @@ use halo2_base::halo2_proofs::{
 };
 use halo2_ecc::ecc::{fixed_base, scalar_multiply, EcPoint, EccChip};
 use halo2_ecc::fields::{fp::FpChip, FieldChip};
-use pallier_chip::{
+use paillier_chip::{
     big_uint::{chip::BigUintChip, AssignedBigUint, Fresh},
     paillier::PaillierChip,
 };
@@ -112,3 +112,4 @@ pub(crate) fn verify_proof<F: BigPrimeField>(
 
     computed_hash == *root
 }
+

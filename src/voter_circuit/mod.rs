@@ -1,5 +1,7 @@
 pub mod utils;
 
+use std::marker::PhantomData;
+
 use halo2_base::{
     gates::{GateChip, GateInstructions, RangeChip, RangeInstructions},
     halo2_proofs::{circuit::Value, plonk::Error},
@@ -9,13 +11,15 @@ use halo2_base::{
 };
 use num_bigint::BigUint;
 
+
 use halo2_base::halo2_proofs::{
     arithmetic::CurveAffine,
     halo2curves::secp256k1::{Fq, Secp256k1Affine},
 };
-use halo2_ecc::ecc::{fixed_base, scalar_multiply, EcPoint, EccChip};
+use halo2_ecc::ecc::{fixed_base, scalar_multiply,EcPoint, EccChip};
+use halo2_ecc::bigint::ProperCrtUint;
 use halo2_ecc::fields::{fp::FpChip, FieldChip};
-use pallier_chip::{
+use paillier_chip::{
     big_uint::{chip::BigUintChip, AssignedBigUint, Fresh},
     paillier::PaillierChip,
 };
@@ -31,21 +35,37 @@ PRIVATE INPUT
 ->pubkey
 ->vote
 */
-
+#[derive(Clone, Debug)]
 pub struct EncryptionPublicKey {
-    n: BigUint,
-    g: BigUint,
+   pub n: BigUint,
+   pub g: BigUint,
 }
-
+#[derive(Clone, Debug)]
 pub struct VoterInput<F: BigPrimeField> {
     vote: Vec<BigUint>,
     vote_enc: Vec<BigUint>,
     r_enc: Vec<BigUint>,
     pk_enc: EncryptionPublicKey,
     membership_root: F,
-    pubkey: EcPoint<F, F>,
+    pubkey:EcPoint<F,F>,
     membership_proof: Vec<F>,
     membership_proof_helper: Vec<F>,
+}
+impl <F:BigPrimeField>VoterInput<F>{
+
+    pub fn new(
+        vote: Vec<BigUint>,
+        vote_enc: Vec<BigUint>,
+        r_enc: Vec<BigUint>,
+        pk_enc: EncryptionPublicKey,
+        membership_root: F,
+        pubkey: EcPoint<F,F>,
+        membership_proof: Vec<F>,
+        membership_proof_helper: Vec<F>,
+    )->Self{
+        Self { vote, vote_enc, r_enc, pk_enc, membership_root, pubkey, membership_proof, membership_proof_helper}
+
+    }
 }
 
 pub fn voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
@@ -149,9 +169,11 @@ pub fn verify_membership_proof<F: BigPrimeField, const T: usize, const RATE: usi
 #[cfg(test)]
 mod test {
 
+    
+    extern crate halo2_base;
+    use  halo2_base::utils::testing::base_test;
     use halo2_base::halo2_proofs::arithmetic::Field;
     use halo2_base::halo2_proofs::halo2curves::ff::WithSmallOrderMulGroup;
-    use halo2_base::utils::testing::base_test;
     use halo2_ecc::ecc::EcPoint;
     use halo2_ecc::*;
 
@@ -177,7 +199,7 @@ mod test {
     };
     use num_bigint::{BigUint, RandBigInt};
     use num_traits::One;
-    use pallier_chip::{
+    use paillier_chip::{
         big_uint::{chip::BigUintChip, AssignedBigUint, Fresh},
         paillier::{paillier_enc, PaillierChip},
     };
@@ -208,8 +230,8 @@ mod test {
 
         let n_b = rng.gen_biguint(ENC_BIT_LEN as u64);
         let g_b = rng.gen_biguint(ENC_BIT_LEN as u64);
-        let mut r_enc: Vec<BigUint> = vec![];
-        let mut vote_enc: Vec<BigUint> = vec![];
+        let mut r_enc = Vec::<BigUint>::new();
+        let mut vote_enc = Vec::<BigUint>::new();
         for i in 0..5 {
             r_enc.push(rng.gen_biguint(ENC_BIT_LEN as u64));
             vote_enc.push(enc_help(&n_b, &g_b, &vote[i], &r_enc[i]));
