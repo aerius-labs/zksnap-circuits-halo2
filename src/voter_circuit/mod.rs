@@ -9,7 +9,7 @@ use halo2_base::{
     Context,
 };
 use num_bigint::BigUint;
-use pallier_chip::{ big_uint::chip::BigUintChip, pallier::PaillierChip };
+use paillier_chip::{ big_uint::chip::BigUintChip, paillier::PaillierChip };
 
 use self::utils::*;
 
@@ -52,7 +52,7 @@ pub fn voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
         .assign_integer(ctx, Value::known(input.pk_enc.g.clone()), enc_bit_len)
         .unwrap();
 
-    let pallier_chip = PaillierChip::construct(
+    let paillier_chip = PaillierChip::construct(
         &biguint_chip,
         enc_bit_len,
         &n_assigned,
@@ -69,12 +69,12 @@ pub fn voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
 
     // 1. Verify correct vote encryption
     for i in 0..input.vote.len() {
-        let cir_enc = pallier_chip.encrypt(ctx, input.vote[i].clone(), &r_assigned[i]).unwrap();
+        let _vote_enc = paillier_chip.encrypt(ctx, input.vote[i].clone(), &r_assigned[i]).unwrap();
         let vote_enc = biguint_chip
             .assign_integer(ctx, Value::known(input.vote_enc[i].clone()), enc_bit_len * 2)
             .unwrap();
 
-        biguint_chip.assert_equal_fresh(ctx, &cir_enc, &vote_enc).unwrap();
+        biguint_chip.assert_equal_fresh(ctx, &_vote_enc, &vote_enc).unwrap();
     }
 
     let membership_root = ctx.load_witness(input.membership_root);

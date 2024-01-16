@@ -1,6 +1,6 @@
 use halo2_base::{
     gates::{ GateChip, GateInstructions },
-    utils::{ BigPrimeField, ScalarField },
+    utils::ScalarField,
     AssignedValue,
     Context,
 };

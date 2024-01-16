@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib.git" }
-halo2-ecc = { git = "https://github.com/axiom-crypto/halo2-lib.git" }
-pallier-chip = { git = "https://github.com/aerius-labs/pallier-halo2.git" , branch = "feat/pallier-add" }
+halo2-base = "0.4.0"
+halo2-ecc = "0.4.0"
+paillier-chip = { git = "https://github.com/aerius-labs/paillier-halo2.git" , branch = "feat/pallier-add" }
 pse-poseidon = { git = "https://github.com/aerius-labs/pse-poseidon.git", branch = "feat/stateless-hash" }
 
 poseidon-rs = "0.0.10"
