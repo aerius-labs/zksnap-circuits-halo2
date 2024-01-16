@@ -13,4 +13,4 @@ halo2-ecc = "0.4.0"
 itertools = "0.12.0"
 poseidon-rs = "0.0.10"
 serde = "1.0.193"
-snark-verifier-sdk = { git = "https://github.com/aerius-labs/snark-verifier.git" }
+snark-verifier-sdk = "0.1.6"
