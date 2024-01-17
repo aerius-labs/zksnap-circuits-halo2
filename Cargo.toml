@@ -1,5 +1,5 @@
 [package]
-name = "halo2circuit"
+name = "voter-circuit-halo2"
 version = "0.1.0"
 edition = "2021"
 
