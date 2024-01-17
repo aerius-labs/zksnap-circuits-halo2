@@ -49,9 +49,8 @@ pub fn voter_circuit_wrapper(
     builder: &mut BaseCircuitBuilder<Fr>,
     input: DummyCircuitInput,
     make_public: &mut Vec<AssignedValue<Fr>>,
-
 ){
-    let range =builder.range_chip();
+        let range =builder.range_chip();
     let ctx=builder.main(0);
     
     let biguint_chip = BigUintChip::<Fr>::construct(&range, LIMB_BIT_LEN);
