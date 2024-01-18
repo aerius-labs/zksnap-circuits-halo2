@@ -1,7 +1,9 @@
 pub mod base_circuit;
+pub mod utils;
 pub mod verifier;
 use std::borrow::BorrowMut;
 
+use crate::voter_circuit::{voter_circuit, EncryptionPublicKey, VoterCircuitInput};
 use halo2_base::{
     gates::{
         circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage},
@@ -12,7 +14,7 @@ use halo2_base::{
         halo2curves::{bn256::Bn256, grumpkin::Fq as Fr},
         poly::kzg::commitment::ParamsKZG,
     },
-    utils::{fe_to_biguint, BigPrimeField, ScalarField},
+    utils::{biguint_to_fe, fe_to_biguint, BigPrimeField, ScalarField},
     AssignedValue,
 };
 use num_bigint::BigUint;
@@ -24,59 +26,108 @@ use snark_verifier_sdk::{
     Snark,
 };
 
-use indexed_merkle_tree_halo2::indexed_merkle_tree::{insert_leaf, IndexedMerkleTreeLeaf};
-//use indexed_merkle_tree_halo2::utils::IndexedMerkleTreeLeaf;
 use self::verifier::{verify_snarks, AggregationCircuit};
 use halo2_base::poseidon::hasher::PoseidonHasher;
+use indexed_merkle_tree_halo2::indexed_merkle_tree::{insert_leaf, IndexedMerkleTreeLeaf};
 use snark_verifier_sdk::halo2::OptimizedPoseidonSpec;
 
-const LIMB_BIT_LEN: usize = 264;
-const ENC_BIT_LEN: usize = 4;
+const LIMB_BIT_LEN: usize = 128;
+const ENC_BIT_LEN: usize = 64;
+
+pub struct IndexedMerkleLeaf<F: BigPrimeField> {
+    val: F,
+    next_val: F,
+    next_idx: F,
+}
 
 pub struct IndexedMerkleInput {
-    low_leaf: IndexedMerkleTreeLeaf<Fr>,
+    low_leaf: IndexedMerkleLeaf<Fr>,
     low_leaf_proof: Vec<Fr>,
     low_leaf_proof_helper: Vec<Fr>,
     new_root: Fr,
-    new_leaf: IndexedMerkleTreeLeaf<Fr>,
+    new_leaf: IndexedMerkleLeaf<Fr>,
     new_leaf_index: Fr,
     new_leaf_proof: Vec<Fr>,
     new_leaf_proof_helper: Vec<Fr>,
     is_new_leaf_largest: Fr,
 }
 
+pub struct VoterInput<F: BigPrimeField> {
+    membership_root: F,
+    pk_enc: EncryptionPublicKey,
+    vote_enc: Vec<BigUint>,
+    nullifier: Vec<F>,
+    proposal_id: F,
+    nullifier_old: BigUint,
+    nullifier_new: BigUint,
+    vote: Vec<BigUint>,
+    vote_enc_old: Vec<BigUint>,
+    r_enc: Vec<BigUint>,
+    pk_voter: Vec<F>,
+    membership_proof: Vec<F>,
+    membership_proof_helper: Vec<F>,
+    limb_bit_len: usize,
+    enc_bit_len: usize,
+}
+
 pub fn voter_circuit_wrapper(
     builder: &mut BaseCircuitBuilder<Fr>,
-    input: DummyCircuitInput,
+    input: VoterInput<Fr>,
     make_public: &mut Vec<AssignedValue<Fr>>,
-){
-        let range =builder.range_chip();
-    let ctx=builder.main(0);
-    
-    let biguint_chip = BigUintChip::<Fr>::construct(&range, LIMB_BIT_LEN);
-    //todo
-    let n_biguint = input.n;
-    // let n_f=*base_pub_input[3].value().to_u64_limbs(num_limbs, bit_len);
+) {
+    let range = builder.range_chip();
+    let ctx = builder.main(0);
+    let mut public_input = Vec::<AssignedValue<Fr>>::new();
 
-    let n_assigned = biguint_chip
-        .assign_integer(ctx, Value::known(n_biguint.clone()), ENC_BIT_LEN)
-        .unwrap();
-    let g_assigned = biguint_chip
-        .assign_integer(
-            ctx,
-            Value::known(input.g),
-            ENC_BIT_LEN,
-        )
-        .unwrap();
-    let paillier_chip = PaillierChip::construct(
-        &biguint_chip,
-        ENC_BIT_LEN,
-        &n_assigned,
-        n_biguint,
-        &g_assigned,
+    let membership_root = ctx.load_witness(input.membership_root.clone());
+    public_input.push(membership_root);
+    let n = ctx.load_witness(biguint_to_fe(&input.pk_enc.n));
+    public_input.push(n);
+    let g = ctx.load_witness(biguint_to_fe(&input.pk_enc.g));
+    public_input.push(g);
+    let proposal_id = ctx.load_witness(input.proposal_id);
+    public_input.push(proposal_id);
+
+    let mut hasher = PoseidonHasher::<Fr, 3, 2>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
+
+    hasher.initialize_consts(ctx, &range.gate);
+    let inputs = VoterCircuitInput::<Fr>::new(
+        input.membership_root,
+        input.pk_enc,
+        input.vote_enc.clone(),
+        input.nullifier,
+        input.proposal_id,
+        input.vote,
+        input.r_enc,
+        input.pk_voter,
+        input.membership_proof,
+        input.membership_proof_helper,
+    );
+    let vote_enc_old: Vec<AssignedValue<Fr>> = (0..input.vote_enc.len())
+        .map(|i| ctx.load_witness(biguint_to_fe(&input.vote_enc_old[i])))
+        .collect();
+    let vote_enc: Vec<AssignedValue<Fr>> = (0..input.vote_enc.len())
+        .map(|i| ctx.load_witness(biguint_to_fe(&input.vote_enc[i])))
+        .collect();
+
+    let _ = (0..vote_enc_old.len()).map(|i| public_input.push(vote_enc_old[i]));
+    let _ = (0..vote_enc.len()).map(|i| public_input.push(vote_enc[i]));
+
+    let nullifier_old = ctx.load_witness(biguint_to_fe(&input.nullifier_old));
+    public_input.push(nullifier_old);
+    let nullifier_new = ctx.load_witness(biguint_to_fe(&input.nullifier_new));
+    public_input.push(nullifier_new);
+
+    voter_circuit::<Fr, 3, 2>(
+        ctx,
+        &range,
+        &hasher,
+        inputs,
+        input.limb_bit_len,
+        input.enc_bit_len,
     );
 
-
+    builder.assigned_instances[0].append(&mut public_input);
 }
 
 pub fn aggregator<AS>(
@@ -86,6 +137,7 @@ pub fn aggregator<AS>(
     snarks: impl IntoIterator<Item = Snark> + Clone,
     universality: VerifierUniversality,
     input: IndexedMerkleInput,
+    expt_vote_enc: Vec<BigUint>,
 ) -> AggregationCircuit
 where
     AS: for<'a> Halo2KzgAccumulationScheme<'a>,
@@ -106,6 +158,7 @@ where
 
     let mut public_var = Vec::<_>::new();
 
+
     let base_instances_vec_size = base_snark.instances.len();
 
     let base_pub_input: Vec<AssignedValue<_>> = (0..4)
@@ -118,15 +171,22 @@ where
     // previous_instances[0][0..4] copy constraint base_pub_input[0..4]
     // previous_instances[base_instaces_vec_size][0..4] copy constraint voter_pub_input[0..4]
 
-    for i in 0..4 {
-        ctx.constrain_equal(&base_pub_input[i], &voter_pub_input[i]);
-        public_var.push(base_pub_input[i]);
+    for i in 0..base_pub_input.len() {
+        ctx.constrain_equal(&previous_instances[0][i], &base_pub_input[i]);
+        ctx.constrain_equal(&previous_instances[1][i], &voter_pub_input[i]);
+        if i > 3 && i < 13 {
+            public_var.push(ctx.load_zero());
+        } else {
+            public_var.push(base_pub_input[i]);
+        }
     }
 
+
+
     let biguint_chip = BigUintChip::<Fr>::construct(&range, LIMB_BIT_LEN);
-    //todo
-    let n_biguint = fe_to_biguint(base_pub_input[3].value());
-    // let n_f=*base_pub_input[3].value().to_u64_limbs(num_limbs, bit_len);
+    
+    let n_biguint = fe_to_biguint(base_pub_input[1].value());
+
 
     let n_assigned = biguint_chip
         .assign_integer(ctx, Value::known(n_biguint.clone()), ENC_BIT_LEN)
@@ -134,7 +194,7 @@ where
     let g_assigned = biguint_chip
         .assign_integer(
             ctx,
-            Value::known(fe_to_biguint(base_pub_input[0].value())),
+            Value::known(fe_to_biguint(base_pub_input[2].value())),
             ENC_BIT_LEN,
         )
         .unwrap();
@@ -147,10 +207,11 @@ where
         &g_assigned,
     );
     for i in 0..=5 {
+        public_var[4 + i] = voter_pub_input[4 + i];
         let vote_enc_old = biguint_chip
             .assign_integer(
                 ctx,
-                Value::known(fe_to_biguint(base_pub_input[12 + i].value())),
+                Value::known(fe_to_biguint(base_pub_input[4 + i].value())),
                 ENC_BIT_LEN,
             )
             .unwrap();
@@ -158,18 +219,15 @@ where
         let vote_enc = biguint_chip
             .assign_integer(
                 ctx,
-                Value::known(fe_to_biguint(voter_pub_input[6 + i].value())),
+                Value::known(fe_to_biguint(voter_pub_input[10 + i].value())),
                 ENC_BIT_LEN,
             )
             .unwrap();
 
         let vote_new_enc = paillier_chip.add(ctx, &vote_enc_old, &vote_enc).unwrap();
+        public_var[10 + i] = ctx.load_witness(biguint_to_fe(&expt_vote_enc[i].clone()));
         let expt_vote_new_enc = biguint_chip
-            .assign_integer(
-                ctx,
-                Value::known(fe_to_biguint(voter_pub_input[12 + i].value())),
-                LIMB_BIT_LEN,
-            )
+            .assign_integer(ctx, Value::known(expt_vote_enc[i].clone()), LIMB_BIT_LEN)
             .unwrap();
         let result = biguint_chip
             .is_equal_fresh(ctx, &vote_new_enc, &expt_vote_new_enc)
@@ -205,16 +263,27 @@ where
         .map(|x| ctx.load_witness(x))
         .collect();
     let is_new_leaf_largest = ctx.load_witness(input.is_new_leaf_largest);
+    let low_leaf = IndexedMerkleTreeLeaf::<Fr>::new(
+        ctx.load_witness(input.low_leaf.val),
+        ctx.load_witness(input.low_leaf.next_val),
+        ctx.load_witness(input.low_leaf.next_idx),
+    );
+    let new_leaf = IndexedMerkleTreeLeaf::<Fr>::new(
+        ctx.load_witness(input.new_leaf.val),
+        ctx.load_witness(input.new_leaf.next_val),
+        ctx.load_witness(input.new_leaf.next_idx),
+    );
+
     insert_leaf::<Fr, 3, 2>(
         ctx,
         &range,
         &hasher,
-        &base_pub_input[0],
-        &input.low_leaf,
+        &base_pub_input[14],
+        &low_leaf,
         &low_leaf_proof[0..],
         &low_leaf_proof_helper[0..],
-        &new_root,
-        &input.new_leaf,
+        &voter_pub_input[15],
+        &new_leaf,
         &new_leaf_index,
         &new_leaf_proof[0..],
         &new_leaf_proof_helper[0..],
@@ -230,15 +299,30 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::merkletree::verify_merkle_proof;
+    use super::{
+        insert_leaf, voter_circuit_wrapper, IndexedMerkleLeaf, IndexedMerkleTreeLeaf, VoterInput,
+    };
+    use crate::aggregator::base_circuit::base_circuit;
+    use crate::aggregator::IndexedMerkleInput;
+    use crate::aggregator::{aggregator, base_circuit::BaseCircuitInput};
     use crate::utils::run;
+    use crate::voter_circuit::{
+        utils::{paillier_enc_native, MerkleTree},
+        EncryptionPublicKey,
+    };
     use ark_std::{end_timer, start_timer};
+    use halo2_base::halo2_proofs::arithmetic::Field;
+    use halo2_base::halo2_proofs::halo2curves::ff::PrimeField;
     use halo2_base::{
         gates::circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage},
         halo2_proofs::halo2curves::grumpkin::Fq as Fr,
-        utils::fs::gen_srs,
+        utils::{biguint_to_fe, fe_to_biguint, fs::gen_srs},
         AssignedValue,
     };
+    use num_bigint::{BigUint, RandBigInt};
+    use num_traits::{One, Zero};
+    use pse_poseidon::Poseidon;
+    use rand::thread_rng;
     use serde::Deserialize;
     use snark_verifier_sdk::{
         gen_pk,
@@ -249,72 +333,116 @@ mod tests {
         SHPLONK,
     };
 
-    use super::aggregator;
-
-    #[derive(Deserialize)]
-    struct DummyCircuitInput {
-        a: Fr,
-        b: Fr,
-        c: Fr,
-        res: Fr,
-    }
-
-    fn dummy_voter_circuit(
-        builder: &mut BaseCircuitBuilder<Fr>,
-        input: DummyCircuitInput,
-        make_public: &mut Vec<AssignedValue<Fr>>,
-    ) {
-        let ctx = builder.main(0);
-
-        let a = ctx.load_witness(input.a);
-        let b = ctx.load_witness(input.b);
-        let c = ctx.load_witness(input.c);
-        let res = ctx.load_witness(input.res);
-
-        ctx.assign_region([c, a, b, res], [0]);
-
-        make_public.push(res)
-    }
-
-    fn dummy_base_circuit(
-        builder: &mut BaseCircuitBuilder<Fr>,
-        input: DummyCircuitInput,
-        make_public: &mut Vec<AssignedValue<Fr>>,
-    ) {
-        let ctx = builder.main(0);
-
-        let a = ctx.load_witness(input.a);
-        let b = ctx.load_witness(input.b);
-        let c = ctx.load_witness(input.c);
-        let res = ctx.load_witness(input.res);
-
-        ctx.assign_region([a, b, c, res], [0]);
-
-        make_public.push(res)
-    }
-
     #[test]
     fn test_simple_aggregation() {
-        let voter_proof = run::<DummyCircuitInput>(
+        const T: usize = 3;
+        const RATE: usize = 2;
+        const R_F: usize = 8;
+        const R_P: usize = 57;
+        const ENC_BIT_LEN: usize = 128;
+        const LIMB_BIT_LEN: usize = 64;
+
+        let mut rng = thread_rng();
+
+        let treesize = u32::pow(2, 3);
+
+        let vote = [
+            BigUint::one(),
+            BigUint::default(),
+            BigUint::default(),
+            BigUint::default(),
+            BigUint::default(),
+        ]
+        .to_vec();
+
+        let n = rng.gen_biguint(ENC_BIT_LEN as u64);
+        let g = rng.gen_biguint(ENC_BIT_LEN as u64);
+
+        let mut r_enc = Vec::<BigUint>::new();
+        let mut vote_enc = Vec::<BigUint>::new();
+
+        for i in 0..5 {
+            r_enc.push(rng.gen_biguint(ENC_BIT_LEN as u64));
+            vote_enc.push(paillier_enc_native(&n, &g, &vote[i], &r_enc[i]));
+        }
+
+        let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
+
+        let mut leaves = Vec::<Fr>::new();
+        let mut indexed_merkle_leaves = Vec::<Fr>::new();
+        let pk_voter = vec![Fr::random(rng.clone()), Fr::random(rng.clone())];
+
+        for i in 0..treesize {
+            if i == 0 {
+                native_hasher.update(&[pk_voter[0], pk_voter[1]]);
+            } else {
+                native_hasher.update(&[Fr::ZERO]);
+            }
+            leaves.push(native_hasher.squeeze_and_reset());
+        }
+
+        for i in 0..treesize {
+            native_hasher.update(&[Fr::ZERO, Fr::ZERO, Fr::ZERO]);
+
+            indexed_merkle_leaves.push(native_hasher.squeeze_and_reset());
+        }
+
+        let membership_tree =
+            MerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+
+        let indexed_tree =
+            MerkleTree::<Fr, T, RATE>::new(&mut native_hasher, indexed_merkle_leaves.clone())
+                .unwrap();
+
+        let membership_root = fe_to_biguint(&membership_tree.get_root());
+        let (membership_proof, membership_proof_helper) = membership_tree.get_proof(0);
+        let nullifier_root_old = fe_to_biguint(&indexed_tree.get_root());
+
+        let pk_enc = EncryptionPublicKey { n, g };
+
+        native_hasher.update(&[Fr::ZERO, Fr::ONE, Fr::from_u128(20 as u128)]);
+        indexed_merkle_leaves.push(native_hasher.squeeze_and_reset());
+
+        let new_indexed_tree =
+            MerkleTree::<Fr, T, RATE>::new(&mut native_hasher, indexed_merkle_leaves.clone())
+                .unwrap();
+
+        let vote_enc_old = (0..5).map(|i| BigUint::zero()).collect();
+
+        let base_proof = run::<BaseCircuitInput>(
             9,
             0,
-            dummy_voter_circuit,
-            DummyCircuitInput {
-                a: Fr::from(1u64),
-                b: Fr::from(2u64),
-                c: Fr::from(3u64),
-                res: Fr::from(5u64),
+            base_circuit,
+            BaseCircuitInput {
+                membership_root,
+                proposal_id: BigUint::one(),
+                vote_enc_old,
+                vote_enc_new: vote_enc,
+                nullifier_root_old,
+                nullifier_root_new: fe_to_biguint(&new_indexed_tree.get_root()),
+                pk_enc,
             },
         );
-        let base_proof = run::<DummyCircuitInput>(
+        let voter_proof = run::<VoterInput<'_, Fr>>(
             9,
             0,
-            dummy_base_circuit,
-            DummyCircuitInput {
-                a: Fr::from(1u64),
-                b: Fr::from(2u64),
-                c: Fr::from(3u64),
-                res: Fr::from(7u64),
+            voter_circuit_wrapper,
+            VoterInput {
+                membership_root: biguint_to_fe(&membership_root),
+                pk_enc,
+                vote_enc,
+                nullifier: leaves,
+                proposal_id: Fr::one(),
+                nullifier_old: nullifier_root_old,
+                nullifier_new: fe_to_biguint(&new_indexed_tree.get_root()),
+                vote,
+                vote_enc_old,
+                r_enc,
+                pk_voter,
+                membership_proof,
+                membership_proof_helper,
+                limb_bit_len: LIMB_BIT_LEN,
+                enc_bit_len: ENC_BIT_LEN,
             },
         );
 
@@ -322,6 +450,30 @@ mod tests {
         let lookup_bits = (k - 1) as usize;
 
         let params = gen_srs(k);
+        let low_leaf = IndexedMerkleLeaf::<Fr> {
+            val: Fr::ZERO,
+            next_val: Fr::ZERO,
+            next_idx: Fr::ZERO,
+        };
+        let new_leaf = IndexedMerkleLeaf::<Fr> {
+            val: Fr::ZERO,
+            next_val: Fr::from_u128(20 as u128),
+            next_idx: Fr::ONE,
+        };
+        let (low_leaf_proof, low_leaf_proof_helper) = indexed_tree.get_proof(0);
+        let new_root = new_indexed_tree.get_root();
+        let (new_leaf_proof, new_leaf_proof_helper) = new_indexed_tree.get_proof(1);
+        let input = IndexedMerkleInput {
+            low_leaf,
+            low_leaf_proof,
+            low_leaf_proof_helper,
+            new_root,
+            new_leaf,
+            new_leaf_index: Fr::ONE,
+            new_leaf_proof,
+            new_leaf_proof_helper,
+            is_new_leaf_largest: Fr::ONE,
+        };
 
         let mut agg_circuit = aggregator::<SHPLONK>(
             CircuitBuilderStage::Keygen,
@@ -331,8 +483,10 @@ mod tests {
                 ..Default::default()
             },
             &params,
-            vec![voter_proof.clone(), base_proof.clone()],
+            vec![base_proof.clone(), voter_proof.clone()],
             VerifierUniversality::Full,
+            input,
+            vote_enc,
         );
         let agg_config = agg_circuit.calculate_params(Some(10));
 
@@ -345,8 +499,10 @@ mod tests {
             CircuitBuilderStage::Prover,
             agg_config,
             &params,
-            vec![voter_proof.clone(), base_proof.clone()],
+            vec![base_proof.clone(), voter_proof.clone()],
             VerifierUniversality::Full,
+            input,
+            vote_enc,
         )
         .use_break_points(break_points.clone());
 

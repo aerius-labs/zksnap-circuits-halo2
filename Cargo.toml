@@ -7,13 +7,16 @@ edition = "2021"
 
 [dependencies]
 paillier-chip = { git = "https://github.com/aerius-labs/paillier-halo2.git" , branch = "feat/pallier-add" }
- indexed-merkle-tree-halo2 = { git = "https://github.com/aerius-labs/indexed-merkle-tree-halo2" , branch = "feat/aggr-indexed" }
+indexed-merkle-tree-halo2 = { git = "https://github.com/aerius-labs/indexed-merkle-tree-halo2" , branch = "feat/aggr-indexed" }
+pse-poseidon = { git = "https://github.com/aerius-labs/pse-poseidon.git", branch = "feat/stateless-hash" }
 ark-std = "0.4.0"
 getset = "0.1.2"
 halo2-base = "0.4.0"
 halo2-ecc = "0.4.0"
 itertools = "0.12.0"
 poseidon-rs = "0.0.10"
+num-traits = "0.2.17"
+rand = "0.8.5"
 serde = "1.0.193"
 snark-verifier-sdk = "0.1.6"
 num-bigint = "0.4.4"
