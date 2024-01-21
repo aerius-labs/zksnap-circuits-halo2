@@ -111,8 +111,8 @@ impl<'a, F: ScalarField, const T: usize, const RATE: usize> MerkleTree<'a, F, T,
         let mut computed_hash = *leaf;
         let mut current_index = index;
 
-        for i in 0..proof.len() {
-            let proof_element = &proof[i];
+        for ele in proof {
+            let proof_element = ele;
             let is_left_node = current_index % 2 == 0;
 
             computed_hash = if is_left_node {

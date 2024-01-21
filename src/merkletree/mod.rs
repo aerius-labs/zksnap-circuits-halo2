@@ -52,12 +52,12 @@ pub fn verify_merkle_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
 
     let two = ctx.load_constant(F::from(2u64));
 
-    let mut computed_hash = input.leaf.clone();
+    let mut computed_hash = *input.leaf;
     for (_, (proof_element, helper)) in input.proof.iter().zip(input.helper.iter()).enumerate() {
-        let input = dual_mux(ctx, &gate, &computed_hash, proof_element, helper);
+        let input = dual_mux(ctx, gate, &computed_hash, proof_element, helper);
         computed_hash = hasher.hash_var_len_array(ctx, range, &input, two);
     }
-    ctx.constrain_equal(&computed_hash, &input.root);
+    ctx.constrain_equal(&computed_hash, input.root);
     make_public.push(computed_hash);
 }
 
