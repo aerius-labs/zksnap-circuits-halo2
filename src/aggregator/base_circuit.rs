@@ -83,7 +83,7 @@ pub fn base_circuit<F: BigPrimeField>(
     make_public.append(
         &mut init_vote_enc
             .iter()
-            .flat_map(|v| v.limbs().to_vec())
+            .flat_map(|v| { v.limbs().to_vec() })
             .collect::<Vec<_>>()
     );
 }
