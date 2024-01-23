@@ -1,6 +1,8 @@
 pub mod utils;
 
 use std::marker::PhantomData;
+use std::sync::atomic;
+use std::*;
 
 use halo2_base::{
     gates::{GateChip, GateInstructions, RangeChip, RangeInstructions},
@@ -168,9 +170,6 @@ pub fn verify_membership_proof<F: BigPrimeField, const T: usize, const RATE: usi
 
 #[cfg(test)]
 mod test {
-
-    
-    extern crate halo2_base;
     use  halo2_base::utils::testing::base_test;
     use halo2_base::halo2_proofs::arithmetic::Field;
     use halo2_base::halo2_proofs::halo2curves::ff::WithSmallOrderMulGroup;

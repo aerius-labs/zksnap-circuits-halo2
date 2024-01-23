@@ -6,7 +6,6 @@ use wasm_bindgen::prelude::*;
 use std::cell::RefCell;
 use std::sync::Arc;
 
-
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 
 
@@ -29,13 +28,14 @@ use halo2_base::{
     utils::{fe_to_biguint, BigPrimeField, ScalarField},
     AssignedValue, Context,
 };
-
+ use std::rc::Rc;
 
 #[wasm_bindgen]
 pub struct NnWasm {
     gate: GateChip<Fr>,
-    builder: Arc<RefCell<BaseCircuitBuilder<Fr>>>,
+    builder:Arc<Rc<RefCell<BaseCircuitBuilder<Fr>>>>,
 }
+//Rc<RefCell<BaseCircuitBuilder<Fr>>, Global>
 #[warn(dead_code)]
 const T: usize = 3;
 const RATE: usize = 2;
@@ -49,9 +49,11 @@ impl NnWasm {
         let gate = GateChip::new();
         NnWasm {
             gate,
-            builder: Arc::clone(&circuit.circuit),
+            builder: Arc::clone(&Arc::new(circuit.circuit.clone())),
         }
     }
+
+    pub fn 
 
     pub fn run(&mut self) {
         const ENC_BIT_LEN: usize = 128;
@@ -96,7 +98,7 @@ impl NnWasm {
         let pk_enc = EncryptionPublicKey { n: n_b, g: g_b };
 
         let input = VoterInput::new(vote, vote_enc, r_enc, pk_enc, membership_root, pubkey, membership_proof, membership_proof_helper);
-        let range:RangeChip<Fr> =RangeChip::new(self.builder.borrow_mut().config_params.lookup_bits.unwrap(),*self.builder.borrow_mut().lookup_manager());
+        let range:RangeChip<Fr> =RangeChip::new(self.builder.borrow_mut().config_params.lookup_bits.unwrap(),self.builder.borrow_mut().lookup_manager().clone());
       let gate=range.gate();
         let mut hasher =
         PoseidonHasher::<Fr, T, RATE>::new(OptimizedPoseidonSpec::new::<R_F, R_P, 0>());
