@@ -15,8 +15,8 @@ use halo2_base::{
 };
 use halo2_ecc::bigint::OverflowInteger;
 
-use paillier_chip::paillier::PaillierChip;
 use biguint_halo2::big_uint::{chip::BigUintChip, AssignedBigUint, Fresh};
+use paillier_chip::paillier::PaillierChip;
 use snark_verifier_sdk::{
     halo2::aggregation::{
         AggregationConfigParams, Halo2KzgAccumulationScheme, VerifierUniversality,
@@ -95,8 +95,6 @@ where
         ctx.constrain_equal(&previous_instances[0][4 + i], &previous_instances[1][4 + i]);
     }
 
-
-   
     let overflow_g = OverflowInteger::<Fr>::new(
         [previous_instances[0][5], previous_instances[0][6]].to_vec(),
         input.limb_bit_len,
@@ -119,16 +117,18 @@ where
         let vote_enc_old_int =
             OverflowInteger::<Fr>::new(previous_instances[0][x..y].to_vec(), input.limb_bit_len);
         let vote_enc_old_biguint = to_bigUint(vote_enc_old_int, input.limb_bit_len);
-      
 
         let vote_enc_int = OverflowInteger::<Fr>::new(
             previous_instances[1][6 + i..9 + i].to_vec(),
             input.limb_bit_len,
         );
         let vote_enc_biguint = to_bigUint(vote_enc_int, input.limb_bit_len);
-      
 
-        vote_new_enc.push(paillier_chip.add(ctx, &vote_enc_old_biguint, &vote_enc_biguint).unwrap());
+        vote_new_enc.push(
+            paillier_chip
+                .add(ctx, &vote_enc_old_biguint, &vote_enc_biguint)
+                .unwrap(),
+        );
         x = y;
         y += 4;
     }

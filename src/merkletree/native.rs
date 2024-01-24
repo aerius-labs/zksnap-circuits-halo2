@@ -1,45 +1,14 @@
-use halo2_base::{
-    gates::{GateChip, GateInstructions},
-    utils::ScalarField,
-    AssignedValue, Context,
-};
-use num_bigint::BigUint;
-
+use halo2_base::utils::BigPrimeField;
 use pse_poseidon::Poseidon;
 
-pub(crate) fn dual_mux<F: ScalarField>(
-    ctx: &mut Context<F>,
-    gate: &GateChip<F>,
-    a: &AssignedValue<F>,
-    b: &AssignedValue<F>,
-    switch: &AssignedValue<F>,
-) -> [AssignedValue<F>; 2] {
-    gate.assert_bit(ctx, *switch);
-
-    let a_sub_b = gate.sub(ctx, *a, *b);
-    let b_sub_a = gate.sub(ctx, *b, *a);
-
-    let left = gate.mul_add(ctx, a_sub_b, *switch, *b); // left = (a-b)*s + b;
-    let right = gate.mul_add(ctx, b_sub_a, *switch, *a); // right = (b-a)*s + a;
-
-    [left, right]
-}
-
-pub(crate) fn paillier_enc_native(n: &BigUint, g: &BigUint, m: &BigUint, r: &BigUint) -> BigUint {
-    let n2 = n * n;
-    let gm = g.modpow(m, &n2);
-    let rn = r.modpow(n, &n2);
-    (gm * rn) % n2
-}
-
 #[derive(Debug)]
-pub(crate) struct MerkleTree<'a, F: ScalarField, const T: usize, const RATE: usize> {
+pub(crate) struct MerkleTree<'a, F: BigPrimeField, const T: usize, const RATE: usize> {
     hash: &'a mut Poseidon<F, T, RATE>,
     tree: Vec<Vec<F>>,
     root: F,
 }
 
-impl<'a, F: ScalarField, const T: usize, const RATE: usize> MerkleTree<'a, F, T, RATE> {
+impl<'a, F: BigPrimeField, const T: usize, const RATE: usize> MerkleTree<'a, F, T, RATE> {
     pub(crate) fn new(
         hash: &'a mut Poseidon<F, T, RATE>,
         leaves: Vec<F>,

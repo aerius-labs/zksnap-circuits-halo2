@@ -1,23 +1,27 @@
-pub mod utils;
-
 use halo2_base::{
-    gates::{
-        circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage},
-        GateChip, RangeChip, RangeInstructions,
-    },
+    gates::{RangeChip, RangeInstructions},
     halo2_proofs::circuit::Value,
     poseidon::hasher::PoseidonHasher,
-    utils::{biguint_to_fe, fe_to_biguint, BigPrimeField, ScalarField},
+    utils::BigPrimeField,
     AssignedValue, Context,
 };
 use num_bigint::BigUint;
-use serde::Deserialize;
 
-use paillier_chip::paillier::PaillierChip;
 use biguint_halo2::big_uint::chip::BigUintChip;
+use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
 use snark_verifier_sdk::halo2::OptimizedPoseidonSpec;
 
-use self::utils::*;
+use crate::merkletree::verify_membership_proof;
+
+// Paillier encryption parameters
+const ENC_BIT_LEN: usize = 176;
+const LIMB_BIT_LEN: usize = 88;
+
+// Poseidon hash parameters
+const T: usize = 3;
+const RATE: usize = 2;
+const R_F: usize = 8;
+const R_P: usize = 57;
 
 #[derive(Debug, Clone)]
 pub struct EncryptionPublicKey {
@@ -29,9 +33,11 @@ pub struct VoterCircuitInput<F: BigPrimeField> {
     // Public inputs
     membership_root: F,
     pk_enc: EncryptionPublicKey,
+    // TODO: this can be removed
     vote_enc: Vec<BigUint>,
-    nullifier: Vec<F>,
+    // nullifier,
     proposal_id: F,
+
     // Private inputs
     vote: Vec<BigUint>,
     r_enc: Vec<BigUint>,
@@ -39,184 +45,28 @@ pub struct VoterCircuitInput<F: BigPrimeField> {
     membership_proof: Vec<F>,
     membership_proof_helper: Vec<F>,
 }
-impl<F: BigPrimeField> VoterCircuitInput<F> {
-    pub fn new(
-        membership_root: F,
-        pk_enc: EncryptionPublicKey,
-        vote_enc: Vec<BigUint>,
-        nullifier: Vec<F>,
-        proposal_id: F,
-        vote: Vec<BigUint>,
-        r_enc: Vec<BigUint>,
-        pk_voter: Vec<F>,
-        membership_proof: Vec<F>,
-        membership_proof_helper: Vec<F>,
-    ) -> Self {
-        Self {
-            membership_root,
-            pk_enc,
-            vote_enc,
-            nullifier,
-            proposal_id,
-            vote,
-            r_enc,
-            pk_voter,
-            membership_proof,
-            membership_proof_helper,
-        }
-    }
-}
-#[derive(Deserialize, Clone)]
-pub struct VoterInput<F: BigPrimeField> {
-    pub membership_root: F,
-    pub n: Vec<u32>,
-    pub g: Vec<u32>,
-    pub vote_enc: Vec<Vec<u32>>,
-    pub nullifier: Vec<F>,
-    pub proposal_id: F,
-    pub vote: Vec<F>,
-    pub r_enc: Vec<Vec<u32>>,
-    pub pk_voter: Vec<F>,
-    pub membership_proof: Vec<F>,
-    pub membership_proof_helper: Vec<F>,
-    pub limb_bit_len: usize,
-    pub enc_bit_len: usize,
-}
 
-pub fn voter_circuit<F: BigPrimeField>(
-    builder: &mut BaseCircuitBuilder<F>,
-    input: VoterInput<F>,
-    make_public: &mut Vec<AssignedValue<F>>,
-) {
-    let range = builder.range_chip();
-    let ctx = builder.main(0);
-    let biguint_chip = BigUintChip::<F>::construct(&range, input.limb_bit_len);
-    let membership_root = ctx.load_witness(input.membership_root);
-    make_public.push(membership_root);
-    let pk_enc = EncryptionPublicKey {
-        n: BigUint::from_slice(&input.n),
-        g: BigUint::from_slice(&input.g),
-    };
-    let n_assigned = biguint_chip
-        .assign_integer(ctx, Value::known(pk_enc.n.clone()), input.enc_bit_len)
-        .unwrap();
-    make_public.append(&mut n_assigned.limbs().to_vec());
-
-    let g_assigned = biguint_chip
-        .assign_integer(ctx, Value::known(pk_enc.g.clone()), input.enc_bit_len)
-        .unwrap();
-    make_public.append(&mut g_assigned.limbs().to_vec());
-    let proposal_id = ctx.load_witness(input.proposal_id);
-    make_public.push(proposal_id);
-    let mut hasher = PoseidonHasher::<F, 3, 2>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
-    hasher.initialize_consts(ctx, &range.gate);
-
-    let vote_enc: Vec<BigUint> = input
-        .vote_enc
-        .iter()
-        .map(|x| BigUint::from_slice(x))
-        .collect();
-
-    let user_vote_enc = vote_enc
-        .iter()
-        .map(|v| {
-            biguint_chip
-                .assign_integer(ctx, Value::known(v.clone()), input.enc_bit_len * 2)
-                .unwrap()
-        })
-        .collect::<Vec<_>>();
-
-    make_public.append(
-        &mut user_vote_enc
-            .iter()
-            .flat_map(|v| v.limbs().to_vec())
-            .collect::<Vec<_>>(),
-    );
-
-    //vote to F
-    let vote: Vec<BigUint> = input.vote.iter().map(|x| fe_to_biguint(x)).collect();
-    let r_enc: Vec<BigUint> = input.r_enc.iter().map(|x| BigUint::from_slice(x)).collect();
-    let inputs = VoterCircuitInput::<F>::new(
-        input.membership_root,
-        pk_enc,
-        vote_enc.clone(),
-        input.nullifier,
-        input.proposal_id,
-        vote,
-        r_enc,
-        input.pk_voter,
-        input.membership_proof,
-        input.membership_proof_helper,
-    );
-
-    _voter_circuit::<F, 3, 2>(
-        ctx,
-        &range,
-        &hasher,
-        inputs,
-        input.limb_bit_len,
-        input.enc_bit_len,
-    );
-
-    builder.assigned_instances[0].append(make_public);
-}
-
-fn _voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
+fn voter_circuit<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,
-    hasher: &PoseidonHasher<F, T, RATE>,
     input: VoterCircuitInput<F>,
-    limb_bit_len: usize,
-    enc_bit_len: usize,
+    public_instances: &mut Vec<AssignedValue<F>>,
 ) {
     let gate = range.gate();
 
-    let biguint_chip = BigUintChip::construct(range, limb_bit_len);
+    let mut hasher = PoseidonHasher::<F, T, RATE>::new(OptimizedPoseidonSpec::new::<R_F, R_P, 0>());
+    hasher.initialize_consts(ctx, gate);
 
-
-    let paillier_chip = PaillierChip::construct(
-        &biguint_chip,
-        enc_bit_len,
-        input.pk_enc.n,
-        input.pk_enc.g,
-    );
-
-    let r_assigned = input
-        .r_enc
-        .iter()
-        .map(|x| {
-            biguint_chip
-                .assign_integer(ctx, Value::known(x.clone()), enc_bit_len)
-                .unwrap()
-        })
-        .collect::<Vec<_>>();
-
-    // 1. Verify correct vote encryption
-    for i in 0..input.vote.len() {
-        let _vote_enc = paillier_chip
-            .encrypt(ctx, &input.vote[i].clone(), &input.r_enc[i])
-            .unwrap();
-        let vote_enc = biguint_chip
-            .assign_integer(
-                ctx,
-                Value::known(input.vote_enc[i].clone()),
-                enc_bit_len * 2,
-            )
-            .unwrap();
-
-        biguint_chip
-            .assert_equal_fresh(ctx, &_vote_enc, &vote_enc)
-            .unwrap();
-    }
+    let biguint_chip = BigUintChip::construct(&range, LIMB_BIT_LEN);
+    let paillier_chip = PaillierChip::construct(&biguint_chip, ENC_BIT_LEN);
 
     let membership_root = ctx.load_witness(input.membership_root);
-
+    public_instances.push(membership_root.clone());
     let leaf_preimage = input
         .pk_voter
         .iter()
         .map(|&x| ctx.load_witness(x))
         .collect::<Vec<_>>();
-
     let leaf = hasher.hash_fix_len_array(ctx, gate, &leaf_preimage[..]);
     let membership_proof = input
         .membership_proof
@@ -229,62 +79,98 @@ fn _voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
         .map(|&helper| ctx.load_witness(helper))
         .collect::<Vec<_>>();
 
-    // 2. Verify if the voter is in the membership tree
+    let proposal_id = ctx.load_witness(input.proposal_id);
+    public_instances.push(proposal_id.clone());
+
+    let n_assigned = biguint_chip
+        .assign_integer(ctx, Value::known(input.pk_enc.n.clone()), ENC_BIT_LEN)
+        .unwrap();
+    public_instances.append(&mut n_assigned.limbs().to_vec());
+
+    let g_assigned = biguint_chip
+        .assign_integer(ctx, Value::known(input.pk_enc.g.clone()), ENC_BIT_LEN)
+        .unwrap();
+    public_instances.append(&mut g_assigned.limbs().to_vec());
+
+    let pk_enc = EncryptionPublicKeyAssigned {
+        n: n_assigned,
+        g: g_assigned,
+    };
+
+    // 1. Verify if the voter is in the membership tree
     verify_membership_proof(
         ctx,
         gate,
-        hasher,
+        &hasher,
         &membership_root,
         &leaf,
         &membership_proof,
         &membership_proof_helper,
     );
-}
 
-pub fn verify_membership_proof<F: BigPrimeField, const T: usize, const RATE: usize>(
-    ctx: &mut Context<F>,
-    gate: &GateChip<F>,
-    hasher: &PoseidonHasher<F, T, RATE>,
-    root: &AssignedValue<F>,
-    leaf: &AssignedValue<F>,
-    proof: &[AssignedValue<F>],
-    helper: &[AssignedValue<F>],
-) {
-    let mut computed_hash = ctx.load_witness(*leaf.value());
+    // TODO: add a check to verify correct votes have been passed.
 
-    for (proof_element, helper) in proof.iter().zip(helper.iter()) {
-        let inp = dual_mux(ctx, gate, &computed_hash, proof_element, helper);
-        computed_hash = hasher.hash_fix_len_array(ctx, gate, &inp);
+    let vote_assigned = input
+        .vote
+        .iter()
+        .map(|x| {
+            biguint_chip
+                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    let r_assigned = input
+        .r_enc
+        .iter()
+        .map(|x| {
+            biguint_chip
+                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    // 2. Verify correct vote encryption
+    for i in 0..input.vote.len() {
+        let _vote_enc = paillier_chip
+            .encrypt(ctx, &pk_enc, &vote_assigned[i], &r_assigned[i])
+            .unwrap();
+        let vote_enc = biguint_chip
+            .assign_integer(
+                ctx,
+                Value::known(input.vote_enc[i].clone()),
+                ENC_BIT_LEN * 2,
+            )
+            .unwrap();
+
+        biguint_chip
+            .assert_equal_fresh(ctx, &_vote_enc, &vote_enc)
+            .unwrap();
+
+        public_instances.append(&mut vote_enc.limbs().to_vec());
     }
-    ctx.constrain_equal(&computed_hash, root);
 }
 
 #[cfg(test)]
 mod test {
-    use super::{EncryptionPublicKey, VoterCircuitInput, _voter_circuit};
-    use crate::voter_circuit::{paillier_enc_native, MerkleTree};
     use halo2_base::halo2_proofs::arithmetic::Field;
+    use halo2_base::halo2_proofs::halo2curves::grumpkin::Fq as Fr;
     use halo2_base::utils::testing::base_test;
-    use halo2_base::{
-        gates::RangeInstructions,
-        halo2_proofs::halo2curves::grumpkin::Fq as Fr,
-        poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher},
-    };
+    use halo2_base::AssignedValue;
     use halo2_ecc::*;
     use num_bigint::{BigUint, RandBigInt};
     use num_traits::One;
+    use paillier_chip::paillier::paillier_enc_native;
     use pse_poseidon::Poseidon;
     use rand::thread_rng;
 
-    #[test]
-    fn test_vote_circuit() {
-        const T: usize = 3;
-        const RATE: usize = 2;
-        const R_F: usize = 8;
-        const R_P: usize = 57;
-        const ENC_BIT_LEN: usize = 128;
-        const LIMB_BIT_LEN: usize = 64;
+    use crate::merkletree::native::MerkleTree;
+    use crate::voter_circuit::{
+        voter_circuit, EncryptionPublicKey, VoterCircuitInput, ENC_BIT_LEN, RATE, R_F, R_P, T,
+    };
 
+    #[test]
+    fn test_voter_circuit() {
         let mut rng = thread_rng();
 
         let treesize = u32::pow(2, 3);
@@ -339,7 +225,6 @@ mod test {
             membership_root,
             pk_enc,
             vote_enc,
-            nullifier: vec![Fr::random(rng.clone()), Fr::random(rng.clone())],
             proposal_id: Fr::random(rng.clone()),
             vote,
             r_enc,
@@ -349,24 +234,15 @@ mod test {
         };
 
         base_test()
-            .k(16)
-            .lookup_bits(15)
+            .k(15)
+            .lookup_bits(14)
             .expect_satisfied(true)
-            .run(|ctx, range| {
-                let gate = range.gate();
+            .run_builder(|pool, range| {
+                let ctx = pool.main();
 
-                let mut hasher =
-                    PoseidonHasher::<Fr, T, RATE>::new(OptimizedPoseidonSpec::new::<R_F, R_P, 0>());
-                hasher.initialize_consts(ctx, gate);
+                let mut public_instances = Vec::<AssignedValue<Fr>>::new();
 
-                _voter_circuit::<Fr, T, RATE>(
-                    ctx,
-                    range,
-                    &hasher,
-                    input,
-                    LIMB_BIT_LEN,
-                    ENC_BIT_LEN,
-                );
-            });
+                voter_circuit(ctx, &range, input, &mut public_instances);
+            })
     }
 }
