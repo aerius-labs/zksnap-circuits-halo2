@@ -15,10 +15,8 @@ use halo2_base::{
 };
 use halo2_ecc::bigint::OverflowInteger;
 
-use paillier_chip::{
-    big_uint::{chip::BigUintChip, AssignedBigUint, Fresh},
-    paillier::PaillierChip,
-};
+use paillier_chip::paillier::PaillierChip;
+use biguint_halo2::big_uint::{chip::BigUintChip, AssignedBigUint, Fresh};
 use snark_verifier_sdk::{
     halo2::aggregation::{
         AggregationConfigParams, Halo2KzgAccumulationScheme, VerifierUniversality,
@@ -97,28 +95,21 @@ where
         ctx.constrain_equal(&previous_instances[0][4 + i], &previous_instances[1][4 + i]);
     }
 
-    let overflow_n = OverflowInteger::<Fr>::new(
-        [previous_instances[0][3], previous_instances[0][4]].to_vec(),
-        input.limb_bit_len,
-    );
-    let n_biguint = to_bigUint(overflow_n.clone(), input.limb_bit_len);
-    let n_assigned = AssignedBigUint::new(overflow_n, Value::known(n_biguint));
 
+   
     let overflow_g = OverflowInteger::<Fr>::new(
         [previous_instances[0][5], previous_instances[0][6]].to_vec(),
         input.limb_bit_len,
     );
     let g_biguint = to_bigUint(overflow_g.clone(), input.limb_bit_len);
-    let g_assigned = AssignedBigUint::new(overflow_g, Value::known(g_biguint));
 
     // TODO: constrain these with previous_instances
 
     let paillier_chip = PaillierChip::construct(
         &biguint_chip,
         input.enc_bit_len,
-        &n_assigned,
         input.pk_enc.n.clone(),
-        &g_assigned,
+        g_biguint,
     );
 
     let mut vote_new_enc = Vec::<AssignedBigUint<Fr, Fresh>>::new();
@@ -128,20 +119,16 @@ where
         let vote_enc_old_int =
             OverflowInteger::<Fr>::new(previous_instances[0][x..y].to_vec(), input.limb_bit_len);
         let vote_enc_old_biguint = to_bigUint(vote_enc_old_int, input.limb_bit_len);
-        let vote_enc_old = biguint_chip
-            .assign_integer(ctx, Value::known(vote_enc_old_biguint), input.limb_bit_len)
-            .unwrap();
+      
 
         let vote_enc_int = OverflowInteger::<Fr>::new(
             previous_instances[1][6 + i..9 + i].to_vec(),
             input.limb_bit_len,
         );
         let vote_enc_biguint = to_bigUint(vote_enc_int, input.limb_bit_len);
-        let vote_enc = biguint_chip
-            .assign_integer(ctx, Value::known(vote_enc_biguint), input.limb_bit_len)
-            .unwrap();
+      
 
-        vote_new_enc.push(paillier_chip.add(ctx, &vote_enc_old, &vote_enc).unwrap());
+        vote_new_enc.push(paillier_chip.add(ctx, &vote_enc_old_biguint, &vote_enc_biguint).unwrap());
         x = y;
         y += 4;
     }

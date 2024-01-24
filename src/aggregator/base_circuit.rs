@@ -5,7 +5,8 @@ use halo2_base::{
     AssignedValue, Context,
 };
 use num_bigint::BigUint;
-use paillier_chip::{big_uint::chip::BigUintChip, paillier::PaillierChip};
+use paillier_chip:: paillier::PaillierChip;
+use biguint_halo2::big_uint::chip::BigUintChip;
 use serde::Deserialize;
 
 use crate::voter_circuit::EncryptionPublicKey;
@@ -62,9 +63,8 @@ pub fn base_circuit<F: BigPrimeField>(
     let paillier_chip = PaillierChip::construct(
         &biguint_chip,
         input.enc_bit_len,
-        &n_assigned,
         pk_enc.n,
-        &g_assigned,
+        pk_enc.g,
     );
 
     let init_vote_enc = input
@@ -93,7 +93,7 @@ pub fn base_circuit<F: BigPrimeField>(
 
     for i in 0..input.init_vote_enc.len() {
         let _init_vote_enc = paillier_chip
-            .encrypt(ctx, BigUint::default(), &r_enc[i])
+            .encrypt(ctx, &BigUint::default(), &BigUint::from_slice(&input.r_enc[i]))
             .unwrap();
         biguint_chip
             .assert_equal_fresh(ctx, &_init_vote_enc, &init_vote_enc[i])

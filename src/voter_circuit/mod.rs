@@ -13,7 +13,8 @@ use halo2_base::{
 use num_bigint::BigUint;
 use serde::Deserialize;
 
-use paillier_chip::{big_uint::chip::BigUintChip, paillier::PaillierChip};
+use paillier_chip::paillier::PaillierChip;
+use biguint_halo2::big_uint::chip::BigUintChip;
 use snark_verifier_sdk::halo2::OptimizedPoseidonSpec;
 
 use self::utils::*;
@@ -172,19 +173,12 @@ fn _voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
 
     let biguint_chip = BigUintChip::construct(range, limb_bit_len);
 
-    let n_assigned = biguint_chip
-        .assign_integer(ctx, Value::known(input.pk_enc.n.clone()), enc_bit_len)
-        .unwrap();
-    let g_assigned = biguint_chip
-        .assign_integer(ctx, Value::known(input.pk_enc.g.clone()), enc_bit_len)
-        .unwrap();
 
     let paillier_chip = PaillierChip::construct(
         &biguint_chip,
         enc_bit_len,
-        &n_assigned,
         input.pk_enc.n,
-        &g_assigned,
+        input.pk_enc.g,
     );
 
     let r_assigned = input
@@ -200,7 +194,7 @@ fn _voter_circuit<F: BigPrimeField, const T: usize, const RATE: usize>(
     // 1. Verify correct vote encryption
     for i in 0..input.vote.len() {
         let _vote_enc = paillier_chip
-            .encrypt(ctx, input.vote[i].clone(), &r_assigned[i])
+            .encrypt(ctx, &input.vote[i].clone(), &input.r_enc[i])
             .unwrap();
         let vote_enc = biguint_chip
             .assign_integer(
