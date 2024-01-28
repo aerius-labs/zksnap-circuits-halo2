@@ -13,7 +13,8 @@ use snark_verifier_sdk::{
     },
     Snark,
 };
-
+use crate::sha256::generate_sha256_snark;
+//use zkevm_hashes::sha256::vanilla;
 use self::verifier::{verify_snarks, AggregationCircuit};
 
 pub fn aggregator<AS>(
@@ -62,7 +63,7 @@ mod tests {
         SHPLONK,
     };
 
-    use crate::utils::run;
+    use crate::{sha256::{generate_sha256_snark,generate_pk}, utils::run};
 
     use super::aggregator;
 
@@ -91,22 +92,6 @@ mod tests {
         make_public.push(res)
     }
 
-    fn dummy_base_circuit(
-        builder: &mut BaseCircuitBuilder<Fr>,
-        input: DummyCircuitInput,
-        make_public: &mut Vec<AssignedValue<Fr>>,
-    ) {
-        let ctx = builder.main(0);
-
-        let a = ctx.load_witness(input.a);
-        let b = ctx.load_witness(input.b);
-        let c = ctx.load_witness(input.c);
-        let res = ctx.load_witness(input.res);
-
-        ctx.assign_region([a, b, c, res], [0]);
-
-        make_public.push(res)
-    }
 
     #[test]
     fn test_simple_aggregation() {
@@ -121,22 +106,15 @@ mod tests {
                 res: Fr::from(5u64),
             },
         );
-        let base_proof = run::<DummyCircuitInput>(
-            9,
-            0,
-            dummy_base_circuit,
-            DummyCircuitInput {
-                a: Fr::from(1u64),
-                b: Fr::from(2u64),
-                c: Fr::from(3u64),
-                res: Fr::from(7u64),
-            },
-        );
-
+      
+    
         let k = 16u32;
         let lookup_bits = (k - 1) as usize;
-
+        let sha_inp=  (0u8..200).collect::<Vec<_>>();
+        let sha_pk=generate_pk(sha_inp, 11);
+       let sha256_snark=generate_sha256_snark(11,sha_pk);
         let params = gen_srs(k);
+
 
         let mut agg_circuit = aggregator::<SHPLONK>(
             CircuitBuilderStage::Keygen,
@@ -146,7 +124,7 @@ mod tests {
                 ..Default::default()
             },
             &params,
-            vec![voter_proof.clone(), base_proof.clone()],
+            vec![voter_proof.clone(),sha256_snark.clone()],
             VerifierUniversality::Full,
         );
         let agg_config = agg_circuit.calculate_params(Some(10));
@@ -160,7 +138,7 @@ mod tests {
             CircuitBuilderStage::Prover,
             agg_config,
             &params,
-            vec![voter_proof.clone(), base_proof.clone()],
+            vec![voter_proof.clone(),sha256_snark.clone()],
             VerifierUniversality::Full,
         )
         .use_break_points(break_points.clone());

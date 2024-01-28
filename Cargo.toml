@@ -7,9 +7,11 @@ edition = "2021"
 
 [dependencies]
 ark-std = "0.4.0"
+sha2 = "0.10.6"
 getset = "0.1.2"
 halo2-base = "0.4.0"
 halo2-ecc = "0.4.0"
+zkevm-hashes = "0.2.1"
 itertools = "0.12.0"
 poseidon-rs = "0.0.10"
 serde = "1.0.193"

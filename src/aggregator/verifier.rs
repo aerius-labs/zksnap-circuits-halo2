@@ -172,6 +172,7 @@ where
         previous_instances,
         accumulator,
         preprocessed,
+        ..
     } = aggregate::<AS>(&svk, &loader, &snarks, as_proof.as_slice(), universality);
     let lhs = accumulator.lhs.assigned();
     let rhs = accumulator.rhs.assigned();
