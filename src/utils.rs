@@ -1,20 +1,27 @@
 use halo2_base::{
-    gates::circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, CircuitBuilderStage},
+    gates::{
+        circuit::{ builder::BaseCircuitBuilder, BaseCircuitParams, CircuitBuilderStage },
+        RangeChip,
+    },
     halo2_proofs::{
-        halo2curves::{bn256::Bn256, grumpkin::Fq as Fr},
+        halo2curves::{ bn256::Bn256, grumpkin::Fq as Fr },
         plonk::verify_proof,
         poly::kzg::{
-            commitment::KZGCommitmentScheme, multiopen::VerifierSHPLONK, strategy::SingleStrategy,
+            commitment::KZGCommitmentScheme,
+            multiopen::VerifierSHPLONK,
+            strategy::SingleStrategy,
         },
     },
     utils::fs::gen_srs,
     AssignedValue,
+    Context,
 };
 use serde::de::DeserializeOwned;
 use snark_verifier_sdk::{
     gen_pk,
-    halo2::{gen_snark_shplonk, PoseidonTranscript},
-    NativeLoader, Snark,
+    halo2::{ gen_snark_shplonk, PoseidonTranscript },
+    NativeLoader,
+    Snark,
 };
 
 pub fn generate_circuit_params(k: usize, lookup_bits: usize) -> BaseCircuitParams {
@@ -31,8 +38,8 @@ pub fn generate_circuit_params(k: usize, lookup_bits: usize) -> BaseCircuitParam
 pub fn create_snark<T: DeserializeOwned>(
     k: u32,
     circuit_params: BaseCircuitParams,
-    f: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
-    inputs: T,
+    f: impl FnOnce(&mut Context<Fr>, &RangeChip<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    inputs: T
 ) -> Result<Snark, ()> {
     // Generate params for the circuit
     let params = gen_srs(k);
@@ -56,18 +63,17 @@ pub fn create_snark<T: DeserializeOwned>(
         VerifierSHPLONK<'_, Bn256>,
         _,
         _,
-        SingleStrategy<'_, Bn256>,
-    >(&params, &vk, strategy, &[&[instance]], &mut transcript)
-    .unwrap();
+        SingleStrategy<'_, Bn256>
+    >(&params, &vk, strategy, &[&[instance]], &mut transcript).unwrap();
 
     Ok(proof)
 }
 
 fn create_circuit<T: DeserializeOwned>(
     circuit_params: BaseCircuitParams,
-    f: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    f: impl FnOnce(&mut Context<Fr>, &RangeChip<Fr>, T, &mut Vec<AssignedValue<Fr>>),
     inputs: T,
-    stage: CircuitBuilderStage,
+    stage: CircuitBuilderStage
 ) -> BaseCircuitBuilder<Fr> {
     let mut builder = BaseCircuitBuilder::new(false).use_params(circuit_params);
 
@@ -75,13 +81,12 @@ fn create_circuit<T: DeserializeOwned>(
     // we need a 64-bit number as input in this case
     // while `some_algorithm_in_zk` was written generically for any field `F`, in practice we use the scalar field of the BN254 curve because that's what the proving system backend uses
     let mut assigned_instances = vec![];
-    f(&mut builder, inputs, &mut assigned_instances);
+
+    let range = builder.range_chip();
+    let ctx = builder.main(0);
+    f(ctx, &range, inputs, &mut assigned_instances);
     if !assigned_instances.is_empty() {
-        assert_eq!(
-            builder.assigned_instances.len(),
-            1,
-            "num_instance_columns != 1"
-        );
+        assert_eq!(builder.assigned_instances.len(), 1, "num_instance_columns != 1");
         builder.assigned_instances[0] = assigned_instances;
     }
 
@@ -98,8 +103,8 @@ fn create_circuit<T: DeserializeOwned>(
 pub fn run<T: DeserializeOwned>(
     k: usize,
     lookup_bits: usize,
-    f: impl FnOnce(&mut BaseCircuitBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
-    inputs: T,
+    f: impl FnOnce(&mut Context<Fr>, &RangeChip<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    inputs: T
 ) -> Snark {
     let circuit_params = generate_circuit_params(k, lookup_bits);
     create_snark(k as u32, circuit_params, f, inputs).unwrap()

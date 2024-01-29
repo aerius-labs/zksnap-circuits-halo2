@@ -34,22 +34,22 @@ pub struct EncryptionPublicKey {
 #[derive(Debug, Clone, Deserialize)]
 pub struct VoterCircuitInput<F: BigPrimeField> {
     // Public inputs
-    membership_root: F,
-    pk_enc: EncryptionPublicKey,
+    pub membership_root: F,
+    pub pk_enc: EncryptionPublicKey,
     // TODO: this can be removed
-    vote_enc: Vec<BigUint>,
+    pub vote_enc: Vec<BigUint>,
     // nullifier,
-    proposal_id: F,
+    pub proposal_id: F,
 
     // Private inputs
-    vote: Vec<BigUint>,
-    r_enc: Vec<BigUint>,
-    pk_voter: Vec<F>,
-    membership_proof: Vec<F>,
-    membership_proof_helper: Vec<F>,
+    pub vote: Vec<BigUint>,
+    pub r_enc: Vec<BigUint>,
+    pub pk_voter: Vec<F>,
+    pub membership_proof: Vec<F>,
+    pub membership_proof_helper: Vec<F>,
 }
 
-fn voter_circuit<F: BigPrimeField>(
+pub fn voter_circuit<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,
     input: VoterCircuitInput<F>,

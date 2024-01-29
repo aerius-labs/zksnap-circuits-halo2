@@ -134,9 +134,11 @@ pub fn base_aggregator<AS>(
     let mut x = 6;
     let mut y = 10;
 
-    for i in 0..5 {
+    for _ in 0..5 {
+        println!("x: {}, y: {}", x, y);
+
         let vote_enc_old_overflow = OverflowInteger::<Fr>::new(
-            previous_instances[0][x..y].to_vec(),
+            previous_instances[0][x + 1..y + 1].to_vec(),
             input.limb_bit_len
         );
         let vote_enc_old_biguint = to_biguint(vote_enc_old_overflow.clone(), input.limb_bit_len);
@@ -146,7 +148,7 @@ pub fn base_aggregator<AS>(
         );
 
         let user_vote_enc_overflow = OverflowInteger::<Fr>::new(
-            previous_instances[1][x + 1 + i..y + 1 + i].to_vec(),
+            previous_instances[1][x..y].to_vec(),
             input.limb_bit_len
         );
         let user_vote_enc_biguint = to_biguint(user_vote_enc_overflow.clone(), input.limb_bit_len);
@@ -158,6 +160,7 @@ pub fn base_aggregator<AS>(
         vote_new_enc.push(
             paillier_chip.add(builder.main(0), &pk_enc, &vote_enc_old, &user_vote_enc).unwrap()
         );
+
         x = y;
         y += 4;
     }
@@ -219,187 +222,179 @@ pub fn base_aggregator<AS>(
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::aggregator::base_circuit::base_circuit;
-//     use crate::aggregator::utils::generate_idx_input;
-//     use crate::aggregator::{ aggregator, base_circuit::BaseCircuitInput };
-//     use crate::utils::run;
-//     use crate::voter_circuit::{
-//         utils::{ paillier_enc_native, MerkleTree },
-//         voter_circuit,
-//         VoterInput,
-//     };
-//     use ark_std::{ end_timer, start_timer };
-//     use halo2_base::halo2_proofs::arithmetic::Field;
+#[cfg(test)]
+mod tests {
+    use crate::aggregator::base_aggregator;
+    use crate::aggregator::base_circuit::base_circuit;
+    use crate::aggregator::utils::generate_idx_input;
+    use crate::aggregator::base_circuit::BaseCircuitInput;
+    use crate::merkletree::native::MerkleTree;
+    use crate::utils::run;
+    use crate::voter_circuit::{ voter_circuit, EncryptionPublicKey, VoterCircuitInput };
 
-//     use halo2_base::{
-//         gates::circuit::CircuitBuilderStage,
-//         halo2_proofs::halo2curves::grumpkin::Fq as Fr,
-//         utils::{ biguint_to_fe, fs::gen_srs },
-//     };
-//     use num_bigint::{ BigUint, RandBigInt };
-//     use num_traits::{ One, Zero };
+    use ark_std::{ end_timer, start_timer };
+    use halo2_base::halo2_proofs::arithmetic::Field;
 
-//     use pse_poseidon::Poseidon;
-//     use rand::thread_rng;
-//     use snark_verifier_sdk::{
-//         gen_pk,
-//         halo2::{
-//             aggregation::{ AggregationConfigParams, VerifierUniversality },
-//             gen_snark_shplonk,
-//         },
-//         SHPLONK,
-//     };
+    use halo2_base::{
+        gates::circuit::CircuitBuilderStage,
+        halo2_proofs::halo2curves::grumpkin::Fq as Fr,
+        utils::fs::gen_srs,
+    };
+    use num_bigint::{ BigUint, RandBigInt };
+    use num_traits::{ One, Zero };
 
-//     #[test]
-//     fn test_voter_aggregation() {
-//         const T: usize = 3;
-//         const RATE: usize = 2;
-//         const R_F: usize = 8;
-//         const R_P: usize = 57;
-//         const ENC_BIT_LEN: usize = 128;
-//         const LIMB_BIT_LEN: usize = 64;
+    use paillier_chip::paillier::paillier_enc_native;
+    use pse_poseidon::Poseidon;
+    use rand::thread_rng;
+    use snark_verifier_sdk::{
+        gen_pk,
+        halo2::{
+            aggregation::{ AggregationConfigParams, VerifierUniversality },
+            gen_snark_shplonk,
+        },
+        SHPLONK,
+    };
 
-//         let mut rng = thread_rng();
+    #[test]
+    fn test_voter_aggregation() {
+        const T: usize = 3;
+        const RATE: usize = 2;
+        const R_F: usize = 8;
+        const R_P: usize = 57;
+        const ENC_BIT_LEN: usize = 176;
+        const LIMB_BIT_LEN: usize = 88;
 
-//         let treesize = u32::pow(2, 3);
+        let mut rng = thread_rng();
 
-//         let vote = [
-//             BigUint::one(),
-//             BigUint::zero(),
-//             BigUint::zero(),
-//             BigUint::zero(),
-//             BigUint::zero(),
-//         ].to_vec();
+        let treesize = u32::pow(2, 3);
 
-//         let n = rng.gen_biguint(ENC_BIT_LEN as u64);
-//         let g = rng.gen_biguint(ENC_BIT_LEN as u64);
+        let vote = [
+            BigUint::one(),
+            BigUint::zero(),
+            BigUint::zero(),
+            BigUint::zero(),
+            BigUint::zero(),
+        ].to_vec();
 
-//         let mut r_enc = Vec::<BigUint>::new();
-//         let mut vote_enc = Vec::<Vec<u32>>::new();
-//         let mut vote_enc_old = Vec::<Vec<u32>>::new();
-//         for i in 0..5 {
-//             r_enc.push(rng.gen_biguint(ENC_BIT_LEN as u64));
-//             vote_enc.push(paillier_enc_native(&n, &g, &vote[i], &r_enc[i]).to_u32_digits());
-//             vote_enc_old.push(
-//                 paillier_enc_native(&n, &g, &BigUint::zero(), &r_enc[i]).to_u32_digits()
-//             );
-//         }
+        let n = rng.gen_biguint(ENC_BIT_LEN as u64);
+        let g = rng.gen_biguint(ENC_BIT_LEN as u64);
+        let pk_enc = EncryptionPublicKey {
+            n: n.clone(),
+            g: g.clone(),
+        };
 
-//         let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
+        let mut r_enc = Vec::<BigUint>::new();
+        let mut vote_enc = Vec::<BigUint>::new();
+        let mut init_vote_enc = Vec::<BigUint>::new();
+        let mut vote_enc_old = Vec::<BigUint>::new();
+        for i in 0..5 {
+            r_enc.push(rng.gen_biguint(ENC_BIT_LEN as u64));
+            vote_enc.push(paillier_enc_native(&n, &g, &vote[i], &r_enc[i]));
+            init_vote_enc.push(paillier_enc_native(&n, &g, &BigUint::zero(), &r_enc[i]));
+            vote_enc_old.push(paillier_enc_native(&n, &g, &BigUint::zero(), &r_enc[i]));
+        }
 
-//         let mut membership_leaves = Vec::<Fr>::new();
+        let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
 
-//         let pk_voter = vec![Fr::random(rng.clone()), Fr::random(rng.clone())];
+        let mut membership_leaves = Vec::<Fr>::new();
 
-//         for i in 0..treesize {
-//             if i == 0 {
-//                 native_hasher.update(&[pk_voter[0], pk_voter[1]]);
-//             } else {
-//                 native_hasher.update(&[Fr::ZERO]);
-//             }
-//             membership_leaves.push(native_hasher.squeeze_and_reset());
-//         }
-//         let membership_tree = MerkleTree::<Fr, T, RATE>
-//             ::new(&mut native_hasher, membership_leaves.clone())
-//             .unwrap();
+        let pk_voter = vec![Fr::random(rng.clone()), Fr::random(rng.clone())];
 
-//         let mut native_hasher2 = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
-//         let mut nullifier_leaves = Vec::<Fr>::new();
-//         for i in 0..treesize {
-//             if i == 0 {
-//                 native_hasher2.update(&[Fr::ZERO, Fr::ZERO, Fr::ZERO]);
-//                 nullifier_leaves.push(native_hasher2.squeeze_and_reset());
-//             } else {
-//                 nullifier_leaves.push(Fr::from(0));
-//             }
-//         }
+        for i in 0..treesize {
+            if i == 0 {
+                native_hasher.update(&[pk_voter[0], pk_voter[1]]);
+            } else {
+                native_hasher.update(&[Fr::ZERO]);
+            }
+            membership_leaves.push(native_hasher.squeeze_and_reset());
+        }
+        let membership_tree = MerkleTree::<Fr, T, RATE>
+            ::new(&mut native_hasher, membership_leaves.clone())
+            .unwrap();
 
-//         let membership_root = membership_tree.get_root();
+        let mut native_hasher2 = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
+        let mut nullifier_leaves = Vec::<Fr>::new();
+        for i in 0..treesize {
+            if i == 0 {
+                native_hasher2.update(&[Fr::ZERO, Fr::ZERO, Fr::ZERO]);
+                nullifier_leaves.push(native_hasher2.squeeze_and_reset());
+            } else {
+                nullifier_leaves.push(Fr::from(0));
+            }
+        }
 
-//         let nullifier_tree = MerkleTree::<Fr, T, RATE>
-//             ::new(&mut native_hasher2, nullifier_leaves.clone())
-//             .unwrap();
+        let membership_root = membership_tree.get_root();
 
-//         let init_nullifier_root = nullifier_tree.get_root();
+        let nullifier_tree = MerkleTree::<Fr, T, RATE>
+            ::new(&mut native_hasher2, nullifier_leaves.clone())
+            .unwrap();
 
-//         let (membership_proof, membership_proof_helper) = membership_tree.get_proof(0);
+        let init_nullifier_root = nullifier_tree.get_root();
 
-//         let vote = vote
-//             .iter()
-//             .map(|x| biguint_to_fe(x))
-//             .collect();
+        let (membership_proof, membership_proof_helper) = membership_tree.get_proof(0);
 
-//         let r_enc: Vec<Vec<u32>> = r_enc
-//             .iter()
-//             .map(|x| x.to_u32_digits())
-//             .collect();
-//         let base_proof = run::<BaseCircuitInput<Fr>>(16, 15, base_circuit, BaseCircuitInput {
-//             membership_root,
-//             proposal_id: Fr::one(),
-//             n: n.to_u32_digits(),
-//             g: g.to_u32_digits(),
-//             init_vote_enc: vote_enc_old,
-//             init_nullifier_root,
-//             r_enc: r_enc.clone(),
-//             limb_bit_len: LIMB_BIT_LEN,
-//             enc_bit_len: ENC_BIT_LEN,
-//         });
-//         let voter_proof = run::<VoterInput<Fr>>(16, 15, voter_circuit, VoterInput {
-//             membership_root,
-//             n: n.to_u32_digits(),
-//             g: g.to_u32_digits(),
-//             vote_enc,
-//             nullifier: nullifier_leaves,
-//             proposal_id: Fr::one(),
-//             vote,
-//             r_enc: r_enc.clone(),
-//             pk_voter,
-//             membership_proof,
-//             membership_proof_helper,
-//             limb_bit_len: LIMB_BIT_LEN,
-//             enc_bit_len: ENC_BIT_LEN,
-//         });
-//         let k = 16u32;
-//         let lookup_bits = (k - 1) as usize;
-//         let params = gen_srs(k);
+        let base_proof = run::<BaseCircuitInput<Fr>>(16, 15, base_circuit, BaseCircuitInput {
+            membership_root,
+            proposal_id: Fr::one(),
+            pk_enc: pk_enc.clone(),
+            init_vote_enc: vote_enc_old,
+            init_nullifier_root,
+            r_enc: r_enc.clone(),
+            limb_bit_len: LIMB_BIT_LEN,
+            enc_bit_len: ENC_BIT_LEN,
+        });
 
-//         let input = generate_idx_input(n.clone(), g.clone());
+        let voter_proof = run::<VoterCircuitInput<Fr>>(16, 15, voter_circuit, VoterCircuitInput {
+            membership_root,
+            pk_enc,
+            vote_enc,
+            proposal_id: Fr::one(),
+            vote,
+            r_enc: r_enc.clone(),
+            pk_voter,
+            membership_proof,
+            membership_proof_helper,
+        });
 
-//         let mut agg_circuit = aggregator::<SHPLONK>(
-//             CircuitBuilderStage::Keygen,
-//             AggregationConfigParams {
-//                 degree: k,
-//                 lookup_bits,
-//                 ..Default::default()
-//             },
-//             &params,
-//             base_proof.clone(),
-//             voter_proof.clone(),
-//             VerifierUniversality::Full,
-//             input.clone()
-//         );
-//         let agg_config = agg_circuit.calculate_params(Some(10));
+        let k = 16u32;
+        let lookup_bits = (k - 1) as usize;
+        let params = gen_srs(k);
 
-//         let start0 = start_timer!(|| "gen vk & pk");
-//         let pk = gen_pk(&params, &agg_circuit, None);
-//         end_timer!(start0);
-//         let break_points = agg_circuit.break_points();
-//         println!("keygen done");
+        let input = generate_idx_input(n.clone(), g.clone());
 
-//         let agg_circuit = aggregator::<SHPLONK>(
-//             CircuitBuilderStage::Prover,
-//             agg_config,
-//             &params,
-//             base_proof.clone(),
-//             voter_proof.clone(),
-//             VerifierUniversality::Full,
-//             input
-//         ).use_break_points(break_points.clone());
-//         println!("prover done");
+        let mut agg_circuit = base_aggregator::<SHPLONK>(
+            CircuitBuilderStage::Keygen,
+            AggregationConfigParams {
+                degree: k,
+                lookup_bits,
+                ..Default::default()
+            },
+            &params,
+            base_proof.clone(),
+            voter_proof.clone(),
+            VerifierUniversality::Full,
+            input.clone()
+        );
+        let agg_config = agg_circuit.calculate_params(Some(10));
 
-//         let _snark = gen_snark_shplonk(&params, &pk, agg_circuit, None::<&str>);
-//         println!("snark success");
-//     }
-// }
+        let start0 = start_timer!(|| "gen vk & pk");
+        let pk = gen_pk(&params, &agg_circuit, None);
+        end_timer!(start0);
+        let break_points = agg_circuit.break_points();
+        println!("keygen done");
+
+        let agg_circuit = base_aggregator::<SHPLONK>(
+            CircuitBuilderStage::Prover,
+            agg_config,
+            &params,
+            base_proof.clone(),
+            voter_proof.clone(),
+            VerifierUniversality::Full,
+            input
+        ).use_break_points(break_points.clone());
+        println!("prover done");
+
+        let _snark = gen_snark_shplonk(&params, &pk, agg_circuit, None::<&str>);
+        println!("snark success");
+    }
+}
