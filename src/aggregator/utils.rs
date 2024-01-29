@@ -16,7 +16,7 @@ pub(crate) fn paillier_enc_native(n: &BigUint, g: &BigUint, m: &BigUint, r: &Big
     (gm * rn) % n2
 }
 
-pub(crate) fn to_bigUint<F: BigPrimeField>(int: OverflowInteger<F>, limb_bits: usize) -> BigUint {
+pub(crate) fn to_biguint<F: BigPrimeField>(int: OverflowInteger<F>, limb_bits: usize) -> BigUint {
     int.limbs.iter().rev().fold(BigUint::zero(), |acc, acell| {
         (acc << limb_bits) + fe_to_biguint(acell.value())
     })

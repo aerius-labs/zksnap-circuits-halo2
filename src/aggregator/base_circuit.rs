@@ -1,9 +1,13 @@
 use biguint_halo2::big_uint::chip::BigUintChip;
 use halo2_base::{
-    gates::RangeChip, halo2_proofs::circuit::Value, utils::BigPrimeField, AssignedValue, Context,
+    gates::RangeChip,
+    halo2_proofs::circuit::Value,
+    utils::BigPrimeField,
+    AssignedValue,
+    Context,
 };
 use num_bigint::BigUint;
-use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
+use paillier_chip::paillier::{ EncryptionPublicKeyAssigned, PaillierChip };
 use serde::Deserialize;
 
 use crate::voter_circuit::EncryptionPublicKey;
@@ -27,7 +31,7 @@ pub fn base_circuit<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,
     input: BaseCircuitInput<F>,
-    public_inputs: &mut Vec<AssignedValue<F>>,
+    public_inputs: &mut Vec<AssignedValue<F>>
 ) {
     let biguint_chip = BigUintChip::construct(&range, input.limb_bit_len);
 
@@ -61,8 +65,7 @@ pub fn base_circuit<F: BigPrimeField>(
 
     let paillier_chip = PaillierChip::construct(&biguint_chip, input.enc_bit_len);
 
-    let init_vote_enc = input
-        .init_vote_enc
+    let init_vote_enc = input.init_vote_enc
         .iter()
         .map(|v| {
             biguint_chip
@@ -71,45 +74,38 @@ pub fn base_circuit<F: BigPrimeField>(
         })
         .collect::<Vec<_>>();
 
-    let r_enc = input
-        .r_enc
+    let r_enc = input.r_enc
         .iter()
         .map(|v| {
-            biguint_chip
-                .assign_integer(ctx, Value::known(v.clone()), input.enc_bit_len)
-                .unwrap()
+            biguint_chip.assign_integer(ctx, Value::known(v.clone()), input.enc_bit_len).unwrap()
         })
         .collect::<Vec<_>>();
 
     for i in 0..input.init_vote_enc.len() {
-        let _init_vote_enc = paillier_chip
-            .encrypt(ctx, &pk_enc, &zero_big, &r_enc[i])
-            .unwrap();
-        biguint_chip
-            .assert_equal_fresh(ctx, &_init_vote_enc, &init_vote_enc[i])
-            .unwrap();
+        let _init_vote_enc = paillier_chip.encrypt(ctx, &pk_enc, &zero_big, &r_enc[i]).unwrap();
+        biguint_chip.assert_equal_fresh(ctx, &_init_vote_enc, &init_vote_enc[i]).unwrap();
     }
     public_inputs.append(
         &mut init_vote_enc
             .iter()
-            .flat_map(|v| v.limbs().to_vec())
-            .collect::<Vec<_>>(),
+            .flat_map(|v| { v.limbs().to_vec() })
+            .collect::<Vec<_>>()
     );
 }
 
 #[cfg(test)]
 mod tests {
     use halo2_base::{
-        halo2_proofs::{arithmetic::Field, halo2curves::grumpkin::Fq as Fr},
+        halo2_proofs::{ arithmetic::Field, halo2curves::grumpkin::Fq as Fr },
         utils::testing::base_test,
         AssignedValue,
     };
-    use num_bigint::{BigUint, RandBigInt};
+    use num_bigint::{ BigUint, RandBigInt };
     use rand::thread_rng;
 
     use crate::{
         aggregator::{
-            base_circuit::{base_circuit, BaseCircuitInput},
+            base_circuit::{ base_circuit, BaseCircuitInput },
             utils::paillier_enc_native,
         },
         voter_circuit::EncryptionPublicKey,

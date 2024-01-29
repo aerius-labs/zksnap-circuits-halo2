@@ -65,6 +65,7 @@ fn voter_circuit<F: BigPrimeField>(
 
     let membership_root = ctx.load_witness(input.membership_root);
     public_inputs.push(membership_root.clone());
+
     let leaf_preimage = input.pk_voter
         .iter()
         .map(|&x| ctx.load_witness(x))

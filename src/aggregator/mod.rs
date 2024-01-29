@@ -2,195 +2,222 @@ pub mod base_circuit;
 pub mod utils;
 pub mod verifier;
 
-// use crate::voter_circuit::EncryptionPublicKey;
-// use halo2_base::{
-//     gates::circuit::{ builder::BaseCircuitBuilder, CircuitBuilderStage },
-//     halo2_proofs::{
-//         halo2curves::{ bn256::Bn256, grumpkin::Fq as Fr },
-//         poly::kzg::commitment::ParamsKZG,
-//     },
-//     utils::BigPrimeField,
-//     AssignedValue,
-// };
-// use halo2_ecc::bigint::OverflowInteger;
+use halo2_base::{
+    gates::circuit::{ builder::BaseCircuitBuilder, CircuitBuilderStage },
+    halo2_proofs::{
+        circuit::Value,
+        halo2curves::{ bn256::Bn256, grumpkin::Fq as Fr },
+        poly::kzg::commitment::ParamsKZG,
+    },
+    utils::BigPrimeField,
+    AssignedValue,
+};
+use halo2_ecc::bigint::OverflowInteger;
 
-// use biguint_halo2::big_uint::{ chip::BigUintChip, AssignedBigUint, Fresh };
-// use paillier_chip::paillier::PaillierChip;
-// use snark_verifier_sdk::{
-//     halo2::aggregation::{
-//         AggregationConfigParams,
-//         Halo2KzgAccumulationScheme,
-//         VerifierUniversality,
-//     },
-//     Snark,
-// };
+use biguint_halo2::big_uint::{ chip::BigUintChip, AssignedBigUint, Fresh };
+use paillier_chip::paillier::{ EncryptionPublicKeyAssigned, PaillierChip };
+use snark_verifier_sdk::{
+    halo2::aggregation::{
+        AggregationConfigParams,
+        Halo2KzgAccumulationScheme,
+        VerifierUniversality,
+    },
+    Snark,
+};
 
-// use self::verifier::{ verify_snarks, AggregationCircuit };
-// use crate::aggregator::utils::to_bigUint;
-// use halo2_base::poseidon::hasher::PoseidonHasher;
-// use indexed_merkle_tree_halo2::indexed_merkle_tree::{ insert_leaf, IndexedMerkleTreeLeaf };
-// use snark_verifier_sdk::halo2::OptimizedPoseidonSpec;
+use self::verifier::{ verify_snarks, AggregationCircuit };
+use crate::aggregator::utils::to_biguint;
+use halo2_base::poseidon::hasher::PoseidonHasher;
+use indexed_merkle_tree_halo2::indexed_merkle_tree::{ insert_leaf, IndexedMerkleTreeLeaf };
+use snark_verifier_sdk::halo2::OptimizedPoseidonSpec;
 
-// #[derive(Debug, Clone)]
-// pub struct IndexedMerkleLeaf<F: BigPrimeField> {
-//     val: F,
-//     next_val: F,
-//     next_idx: F,
-// }
+#[derive(Debug, Clone)]
+pub struct IndexedMerkleLeaf<F: BigPrimeField> {
+    val: F,
+    next_val: F,
+    next_idx: F,
+}
 
-// #[derive(Debug, Clone)]
-// pub struct AggregatorCircuitInput {
-//     pub pk_enc: EncryptionPublicKey,
-//     // Utils
-//     pub limb_bit_len: usize,
-//     pub enc_bit_len: usize,
-//     low_leaf: IndexedMerkleLeaf<Fr>,
-//     low_leaf_proof: Vec<Fr>,
-//     low_leaf_proof_helper: Vec<Fr>,
-//     new_root: Fr,
-//     new_leaf: IndexedMerkleLeaf<Fr>,
-//     new_leaf_index: Fr,
-//     new_leaf_proof: Vec<Fr>,
-//     new_leaf_proof_helper: Vec<Fr>,
-//     is_new_leaf_largest: Fr,
-// }
+#[derive(Debug, Clone)]
+pub struct AggregatorCircuitInput {
+    low_leaf: IndexedMerkleLeaf<Fr>,
+    low_leaf_proof: Vec<Fr>,
+    low_leaf_proof_helper: Vec<Fr>,
+    new_root: Fr,
+    new_leaf: IndexedMerkleLeaf<Fr>,
+    new_leaf_index: Fr,
+    new_leaf_proof: Vec<Fr>,
+    new_leaf_proof_helper: Vec<Fr>,
+    is_new_leaf_largest: Fr,
+    limb_bit_len: usize,
+    enc_bit_len: usize,
+}
 
-// pub fn aggregator<AS>(
-//     stage: CircuitBuilderStage,
-//     config_params: AggregationConfigParams,
-//     params: &ParamsKZG<Bn256>,
-//     earlier_proof: Snark,
-//     voter_proof: Snark,
-//     universality: VerifierUniversality,
-//     input: AggregatorCircuitInput
-// ) -> AggregationCircuit
-//     where AS: for<'a> Halo2KzgAccumulationScheme<'a>
-// {
-//     // This builder can be used to instantiate the custom circuit and then will be passed to the aggregation circuit.
-//     let mut builder = BaseCircuitBuilder::<Fr>::from_stage(stage).use_params(config_params.into());
+pub fn base_aggregator<AS>(
+    stage: CircuitBuilderStage,
+    config_params: AggregationConfigParams,
+    params: &ParamsKZG<Bn256>,
+    base_proof: Snark,
+    voter_proof: Snark,
+    universality: VerifierUniversality,
+    input: AggregatorCircuitInput
+) -> AggregationCircuit
+    where AS: for<'a> Halo2KzgAccumulationScheme<'a>
+{
+    // This builder can be used to instantiate the custom circuit and then will be passed to the aggregation circuit.
+    let mut builder = BaseCircuitBuilder::<Fr>::from_stage(stage).use_params(config_params.into());
 
-//     // TODO: can this be done at the last?
-//     let (builder, previous_instances, preprocessed) = verify_snarks::<AS>(
-//         &mut builder,
-//         params,
-//         [earlier_proof, voter_proof],
-//         universality
-//     );
+    let (builder, previous_instances, preprocessed) = verify_snarks::<AS>(
+        &mut builder,
+        params,
+        [base_proof, voter_proof],
+        universality
+    );
 
-//     let range = builder.range_chip();
-//     let ctx = builder.main(0);
-//     let biguint_chip = BigUintChip::<Fr>::construct(&range, input.limb_bit_len);
+    let range = builder.range_chip();
+    let biguint_chip = BigUintChip::<Fr>::construct(&range, input.limb_bit_len);
 
-//     // 1. Constrain all constants
-//     // membership_root
-//     ctx.constrain_equal(&previous_instances[0][0], &previous_instances[1][0]);
-//     // proposal_id
-//     ctx.constrain_equal(&previous_instances[0][1], &previous_instances[1][1]);
-//     // n
-//     for i in 0..2 {
-//         ctx.constrain_equal(&previous_instances[0][3 + i], &previous_instances[1][3 + i]);
-//     }
-//     // g
-//     for i in 0..2 {
-//         ctx.constrain_equal(&previous_instances[0][4 + i], &previous_instances[1][4 + i]);
-//     }
+    // 1. Constrain all constants
+    // membership_root
+    builder.main(0).constrain_equal(&previous_instances[0][0], &previous_instances[1][0]);
+    builder.assigned_instances[0].append(&mut vec![previous_instances[0][0].clone()]);
 
-//     let overflow_g = OverflowInteger::<Fr>::new(
-//         [previous_instances[0][5], previous_instances[0][6]].to_vec(),
-//         input.limb_bit_len
-//     );
-//     let g_biguint = to_bigUint(overflow_g.clone(), input.limb_bit_len);
+    // proposal_id
+    builder.main(0).constrain_equal(&previous_instances[0][1], &previous_instances[1][1]);
+    builder.assigned_instances[0].append(&mut vec![previous_instances[0][1].clone()]);
 
-//     // TODO: constrain these with previous_instances
+    builder.assigned_instances[0].append(&mut vec![previous_instances[0][2].clone()]);
 
-//     let paillier_chip = PaillierChip::construct(
-//         &biguint_chip,
-//         input.enc_bit_len,
-//         input.pk_enc.n.clone(),
-//         g_biguint
-//     );
+    // n
+    for i in 0..2 {
+        builder
+            .main(0)
+            .constrain_equal(&previous_instances[0][3 + i], &previous_instances[1][2 + i]);
+    }
+    builder.assigned_instances[0].append(
+        &mut vec![previous_instances[0][3].clone(), previous_instances[0][4].clone()]
+    );
 
-//     let mut vote_new_enc = Vec::<AssignedBigUint<Fr, Fresh>>::new();
-//     let mut x = 0;
-//     let mut y = 4;
-//     for i in 0..5 {
-//         let vote_enc_old_int = OverflowInteger::<Fr>::new(
-//             previous_instances[0][x..y].to_vec(),
-//             input.limb_bit_len
-//         );
-//         let vote_enc_old_biguint = to_bigUint(vote_enc_old_int, input.limb_bit_len);
+    // g
+    for i in 0..2 {
+        builder
+            .main(0)
+            .constrain_equal(&previous_instances[0][5 + i], &previous_instances[1][4 + i]);
+    }
+    builder.assigned_instances[0].append(
+        &mut vec![previous_instances[0][5].clone(), previous_instances[0][6].clone()]
+    );
 
-//         let vote_enc_int = OverflowInteger::<Fr>::new(
-//             previous_instances[1][6 + i..9 + i].to_vec(),
-//             input.limb_bit_len
-//         );
-//         let vote_enc_biguint = to_bigUint(vote_enc_int, input.limb_bit_len);
+    let n_overflow = OverflowInteger::<Fr>::new(
+        [previous_instances[0][3], previous_instances[0][4]].to_vec(),
+        input.limb_bit_len
+    );
+    let n_biguint = to_biguint(n_overflow.clone(), input.limb_bit_len);
+    let n_assigned = AssignedBigUint::<Fr, Fresh>::new(n_overflow, Value::known(n_biguint));
 
-//         vote_new_enc.push(
-//             paillier_chip.add(ctx, &vote_enc_old_biguint, &vote_enc_biguint).unwrap()
-//         );
-//         x = y;
-//         y += 4;
-//     }
+    let g_overflow = OverflowInteger::<Fr>::new(
+        [previous_instances[0][5], previous_instances[0][6]].to_vec(),
+        input.limb_bit_len
+    );
+    let g_biguint = to_biguint(g_overflow.clone(), input.limb_bit_len);
+    let g_assigned = AssignedBigUint::<Fr, Fresh>::new(g_overflow, Value::known(g_biguint));
 
-//     let mut hasher = PoseidonHasher::<Fr, 3, 2>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
-//     hasher.initialize_consts(ctx, &range.gate);
+    let pk_enc = EncryptionPublicKeyAssigned {
+        n: n_assigned,
+        g: g_assigned,
+    };
 
-//     let low_leaf_proof: Vec<AssignedValue<Fr>> = input.low_leaf_proof
-//         .into_iter()
-//         .map(|x| ctx.load_witness(x))
-//         .collect();
-//     let low_leaf_proof_helper: Vec<AssignedValue<Fr>> = input.low_leaf_proof_helper
-//         .into_iter()
-//         .map(|x| ctx.load_witness(x))
-//         .collect();
-//     let new_root = ctx.load_witness(input.new_root);
+    let paillier_chip = PaillierChip::construct(&biguint_chip, input.enc_bit_len);
 
-//     let new_leaf_index = ctx.load_witness(input.new_leaf_index);
-//     let new_leaf_proof: Vec<AssignedValue<Fr>> = input.new_leaf_proof
-//         .into_iter()
-//         .map(|x| ctx.load_witness(x))
-//         .collect();
-//     let new_leaf_proof_helper: Vec<AssignedValue<Fr>> = input.new_leaf_proof_helper
-//         .into_iter()
-//         .map(|x| ctx.load_witness(x))
-//         .collect();
-//     let is_new_leaf_largest = ctx.load_witness(input.is_new_leaf_largest);
-//     let low_leaf = IndexedMerkleTreeLeaf::<Fr>::new(
-//         ctx.load_witness(input.low_leaf.val),
-//         ctx.load_witness(input.low_leaf.next_val),
-//         ctx.load_witness(input.low_leaf.next_idx)
-//     );
-//     let new_leaf = IndexedMerkleTreeLeaf::<Fr>::new(
-//         ctx.load_witness(input.new_leaf.val),
-//         ctx.load_witness(input.new_leaf.next_val),
-//         ctx.load_witness(input.new_leaf.next_idx)
-//     );
-//     println!("indexed merkle tree ");
+    let mut vote_new_enc = Vec::<AssignedBigUint<Fr, Fresh>>::new();
 
-//     insert_leaf::<Fr, 3, 2>(
-//         ctx,
-//         &range,
-//         &hasher,
-//         &previous_instances[0][2],
-//         &low_leaf,
-//         &low_leaf_proof[0..],
-//         &low_leaf_proof_helper[0..],
-//         &new_root,
-//         &new_leaf,
-//         &new_leaf_index,
-//         &new_leaf_proof[0..],
-//         &new_leaf_proof_helper[0..],
-//         &is_new_leaf_largest
-//     );
-//     println!("done");
+    let mut x = 6;
+    let mut y = 10;
 
-//     AggregationCircuit {
-//         builder: builder.clone(),
-//         previous_instances,
-//         preprocessed,
-//     }
-// }
+    for i in 0..5 {
+        let vote_enc_old_overflow = OverflowInteger::<Fr>::new(
+            previous_instances[0][x..y].to_vec(),
+            input.limb_bit_len
+        );
+        let vote_enc_old_biguint = to_biguint(vote_enc_old_overflow.clone(), input.limb_bit_len);
+        let vote_enc_old = AssignedBigUint::<Fr, Fresh>::new(
+            vote_enc_old_overflow,
+            Value::known(vote_enc_old_biguint)
+        );
+
+        let user_vote_enc_overflow = OverflowInteger::<Fr>::new(
+            previous_instances[1][x + 1 + i..y + 1 + i].to_vec(),
+            input.limb_bit_len
+        );
+        let user_vote_enc_biguint = to_biguint(user_vote_enc_overflow.clone(), input.limb_bit_len);
+        let user_vote_enc = AssignedBigUint::<Fr, Fresh>::new(
+            user_vote_enc_overflow,
+            Value::known(user_vote_enc_biguint)
+        );
+
+        vote_new_enc.push(
+            paillier_chip.add(builder.main(0), &pk_enc, &vote_enc_old, &user_vote_enc).unwrap()
+        );
+        x = y;
+        y += 4;
+    }
+
+    let mut hasher = PoseidonHasher::<Fr, 3, 2>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
+    hasher.initialize_consts(builder.main(0), &range.gate);
+
+    let low_leaf_proof: Vec<AssignedValue<Fr>> = input.low_leaf_proof
+        .into_iter()
+        .map(|x| builder.main(0).load_witness(x))
+        .collect();
+    let low_leaf_proof_helper: Vec<AssignedValue<Fr>> = input.low_leaf_proof_helper
+        .into_iter()
+        .map(|x| builder.main(0).load_witness(x))
+        .collect();
+    let new_root = builder.main(0).load_witness(input.new_root);
+    builder.assigned_instances[0].insert(4, new_root.clone());
+    let new_leaf_index = builder.main(0).load_witness(input.new_leaf_index);
+    let new_leaf_proof: Vec<AssignedValue<Fr>> = input.new_leaf_proof
+        .into_iter()
+        .map(|x| builder.main(0).load_witness(x))
+        .collect();
+    let new_leaf_proof_helper: Vec<AssignedValue<Fr>> = input.new_leaf_proof_helper
+        .into_iter()
+        .map(|x| builder.main(0).load_witness(x))
+        .collect();
+    let is_new_leaf_largest = builder.main(0).load_witness(input.is_new_leaf_largest);
+    let low_leaf = IndexedMerkleTreeLeaf::<Fr>::new(
+        builder.main(0).load_witness(input.low_leaf.val),
+        builder.main(0).load_witness(input.low_leaf.next_val),
+        builder.main(0).load_witness(input.low_leaf.next_idx)
+    );
+    let new_leaf = IndexedMerkleTreeLeaf::<Fr>::new(
+        builder.main(0).load_witness(input.new_leaf.val),
+        builder.main(0).load_witness(input.new_leaf.next_val),
+        builder.main(0).load_witness(input.new_leaf.next_idx)
+    );
+
+    insert_leaf::<Fr, 3, 2>(
+        builder.main(0),
+        &range,
+        &hasher,
+        &previous_instances[0][2],
+        &low_leaf,
+        &low_leaf_proof[0..],
+        &low_leaf_proof_helper[0..],
+        &new_root,
+        &new_leaf,
+        &new_leaf_index,
+        &new_leaf_proof[0..],
+        &new_leaf_proof_helper[0..],
+        &is_new_leaf_largest
+    );
+
+    AggregationCircuit {
+        builder: builder.clone(),
+        previous_instances,
+        preprocessed,
+    }
+}
 
 // #[cfg(test)]
 // mod tests {
