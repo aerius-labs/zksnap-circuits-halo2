@@ -1,11 +1,10 @@
 pub mod verifier;
 
 use halo2_base::{
-    gates::circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage},
-    halo2_proofs::{
+    gates::circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage}, halo2_proofs::{
         halo2curves::{bn256::Bn256, grumpkin::Fq as Fr},
         poly::kzg::commitment::ParamsKZG,
-    },
+    }, AssignedValue
 };
 use snark_verifier_sdk::{
     halo2::aggregation::{
@@ -28,13 +27,23 @@ where
 {
     // This builder can be used to instantiate the custom circuit and then will be passed to the aggregation circuit.
     let mut builder = BaseCircuitBuilder::<Fr>::from_stage(stage).use_params(config_params.into());
-    let ctx = builder.main(0);
-    let range = builder.range_chip();
-
+  
     // TODO: implement the custom circuit.
 
     let (builder, previous_instances, preprocessed) =
         verify_snarks::<AS>(&mut builder, params, snarks, universality);
+
+        let ctx=builder.main(0);
+
+        ctx.constrain_equal(&previous_instances[0][0], &previous_instances[1][0]);
+        ctx.constrain_equal(&previous_instances[0][1], &previous_instances[1][1]);
+        let mut make_public:Vec<AssignedValue<Fr>>=vec![];
+        make_public.push( previous_instances[0][1].clone());
+        make_public.push( previous_instances[1][1].clone());
+
+        builder.assigned_instances[0].append(& mut make_public);
+
+
 
     AggregationCircuit {
         builder: builder.clone(),
@@ -47,8 +56,8 @@ where
 mod tests {
     use ark_std::{end_timer, start_timer};
     use halo2_base::{
-        gates::circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage},
-        halo2_proofs::halo2curves::grumpkin::Fq as Fr,
+        gates::{circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage}, GateInstructions},
+        halo2_proofs::halo2curves::{ff::PrimeField, grumpkin::Fq as Fr},
         utils::fs::gen_srs,
         AssignedValue,
     };
@@ -79,32 +88,44 @@ mod tests {
         input: DummyCircuitInput,
         make_public: &mut Vec<AssignedValue<Fr>>,
     ) {
-        let ctx = builder.main(0);
 
-        let a = ctx.load_witness(input.a);
-        let b = ctx.load_witness(input.b);
-        let c = ctx.load_witness(input.c);
-        let res = ctx.load_witness(input.res);
+        let a = builder.main(0).load_witness(input.a);
+        let b = builder.main(0).load_witness(input.b);
+        let c = builder.main(0).load_witness(input.c);
+        let res = builder.main(0).load_witness(input.res);
 
-        ctx.assign_region([c, a, b, res], [0]);
+        builder.main(0).assign_region([c, a, b, res], [0]);
+        let gate=builder.range_chip().gate;
 
+        let x=gate.mul(builder.main(0), a, b);
+        let mul=builder.main(0).load_witness(a.value().mul(b.value()));
+        builder.main(0).constrain_equal(&x, &mul);
+        make_public.push(a);
+        make_public.push(b);
         make_public.push(res)
     }
-
+//  ctx.assign_region([a, b, c, res], [0]);
     fn dummy_base_circuit(
         builder: &mut BaseCircuitBuilder<Fr>,
         input: DummyCircuitInput,
         make_public: &mut Vec<AssignedValue<Fr>>,
     ) {
-        let ctx = builder.main(0);
+        let a = builder.main(0).load_witness(input.a);
+        let b = builder.main(0).load_witness(input.b);
+        let c = builder.main(0).load_witness(input.c);
+        let res = builder.main(0).load_witness(input.res);
 
-        let a = ctx.load_witness(input.a);
-        let b = ctx.load_witness(input.b);
-        let c = ctx.load_witness(input.c);
-        let res = ctx.load_witness(input.res);
+        builder.main(0).assign_region([a, b, c, res], [0]);
+        let gate=builder.range_chip().gate;
 
-        ctx.assign_region([a, b, c, res], [0]);
-
+        let x=gate.add(builder.main(0), a, b);
+        let add=builder.main(0).load_witness(a.value().add(b.value()));
+        builder.main(0).constrain_equal(&x, &add);
+         let z=gate.mul_add(builder.main(0), c, b, a);
+         println!("z_value={:?}",z.value());
+         builder.main(0).constrain_equal(&z, &res);
+        make_public.push(a);
+        make_public.push(b);
         make_public.push(res)
     }
 
@@ -112,7 +133,7 @@ mod tests {
     fn test_simple_aggregation() {
         let voter_proof = run::<DummyCircuitInput>(
             9,
-            0,
+            16,
             dummy_voter_circuit,
             DummyCircuitInput {
                 a: Fr::from(1u64),
@@ -123,7 +144,7 @@ mod tests {
         );
         let base_proof = run::<DummyCircuitInput>(
             9,
-            0,
+            16,
             dummy_base_circuit,
             DummyCircuitInput {
                 a: Fr::from(1u64),
@@ -132,11 +153,14 @@ mod tests {
                 res: Fr::from(7u64),
             },
         );
+        
 
         let k = 16u32;
         let lookup_bits = (k - 1) as usize;
 
         let params = gen_srs(k);
+
+
 
         let mut agg_circuit = aggregator::<SHPLONK>(
             CircuitBuilderStage::Keygen,
@@ -165,7 +189,34 @@ mod tests {
         )
         .use_break_points(break_points.clone());
 
-        let _snark = gen_snark_shplonk(&params, &pk, agg_circuit, None::<&str>);
-        println!("snark success");
+        let aggr_snark = gen_snark_shplonk(&params, &pk, agg_circuit, None::<&str>);
+        println!("Running the Step aggr circuti");
+        let mut step_agg_circuit = aggregator::<SHPLONK>(
+            CircuitBuilderStage::Keygen,
+            AggregationConfigParams {
+                degree: k,
+                lookup_bits,
+                ..Default::default()
+            },
+            &params,
+            vec![aggr_snark.clone(), base_proof.clone()],
+            VerifierUniversality::Full,
+        );
+        let step_agg_config = step_agg_circuit.calculate_params(Some(10));
+
+        let start0 = start_timer!(|| "gen vk & pk");
+        let pk = gen_pk(&params, &step_agg_circuit, None);
+        end_timer!(start0);
+        let break_points = step_agg_circuit.break_points();
+
+        let step_agg_circuit = aggregator::<SHPLONK>(
+            CircuitBuilderStage::Prover,
+            step_agg_config,
+            &params,
+            vec![aggr_snark.clone(), base_proof.clone()],
+            VerifierUniversality::Full,
+        )
+        .use_break_points(break_points.clone());
+        println!("Step Aggr Ciruit completed");
     }
 }
