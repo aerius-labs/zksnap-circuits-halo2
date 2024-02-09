@@ -124,6 +124,12 @@ where
     let svk: Svk = params.get_g()[0].into();
     let snarks = snarks.into_iter().collect_vec();
 
+    assert_eq!(
+        snarks.len(),
+        2,
+        "AggregationCircuit must have exactly 1 instance column"
+    );
+
     let mut transcript_read =
         PoseidonTranscript::<NativeLoader, &[u8]>::from_spec(&[], POSEIDON_SPEC.clone());
     let accumulators = snarks
@@ -141,6 +147,16 @@ where
                 .unwrap()
         })
         .collect_vec();
+
+
+//   let accumulators = iter::empty()
+//                 .chain(succinct_verify(&app))
+//                 .chain((round > 0).then(|| succinct_verify(&previous)).unwrap_or_else(|| {
+//                     let num_accumulator = 1 + previous.protocol.accumulator_indices.len();
+//                     vec![default_accumulator.clone(); num_accumulator]
+//                 }))
+//                 .collect_vec();
+
 
     let (_accumulator, as_proof) = {
         let mut transcript_write =
