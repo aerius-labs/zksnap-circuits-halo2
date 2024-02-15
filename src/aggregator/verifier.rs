@@ -148,15 +148,13 @@ where
         })
         .collect_vec();
 
-
-//   let accumulators = iter::empty()
-//                 .chain(succinct_verify(&app))
-//                 .chain((round > 0).then(|| succinct_verify(&previous)).unwrap_or_else(|| {
-//                     let num_accumulator = 1 + previous.protocol.accumulator_indices.len();
-//                     vec![default_accumulator.clone(); num_accumulator]
-//                 }))
-//                 .collect_vec();
-
+    //   let accumulators = iter::empty()
+    //                 .chain(succinct_verify(&app))
+    //                 .chain((round > 0).then(|| succinct_verify(&previous)).unwrap_or_else(|| {
+    //                     let num_accumulator = 1 + previous.protocol.accumulator_indices.len();
+    //                     vec![default_accumulator.clone(); num_accumulator]
+    //                 }))
+    //                 .collect_vec();
 
     let (_accumulator, as_proof) = {
         let mut transcript_write =

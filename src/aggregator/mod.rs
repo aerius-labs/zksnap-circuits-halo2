@@ -1,23 +1,21 @@
 pub mod verifier;
 
 use halo2_base::{
-    gates::circuit::{ builder::BaseCircuitBuilder, CircuitBuilderStage },
+    gates::circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage},
     halo2_proofs::{
-        halo2curves::{ bn256::Bn256, grumpkin::Fq as Fr },
+        halo2curves::{bn256::Bn256, grumpkin::Fq as Fr},
         poly::kzg::commitment::ParamsKZG,
     },
     AssignedValue,
 };
 use snark_verifier_sdk::{
     halo2::aggregation::{
-        AggregationConfigParams,
-        Halo2KzgAccumulationScheme,
-        VerifierUniversality,
+        AggregationConfigParams, Halo2KzgAccumulationScheme, VerifierUniversality,
     },
     Snark,
 };
 
-use self::verifier::{ verify_snarks, AggregationCircuit };
+use self::verifier::{verify_snarks, AggregationCircuit};
 
 pub fn aggregator<AS>(
     stage: CircuitBuilderStage,
@@ -25,20 +23,16 @@ pub fn aggregator<AS>(
     params: &ParamsKZG<Bn256>,
     snarks: impl IntoIterator<Item = Snark>,
     universality: VerifierUniversality,
-    aggr_bool: bool
+    aggr_bool: bool,
 ) -> AggregationCircuit
-    where AS: for<'a> Halo2KzgAccumulationScheme<'a>
+where
+    AS: for<'a> Halo2KzgAccumulationScheme<'a>,
 {
     // This builder can be used to instantiate the custom circuit and then will be passed to the aggregation circuit.
     let mut builder = BaseCircuitBuilder::<Fr>::from_stage(stage).use_params(config_params.into());
 
-
-    let (builder, previous_instances, preprocessed) = verify_snarks::<AS>(
-        &mut builder,
-        params,
-        snarks,
-        universality
-    );
+    let (builder, previous_instances, preprocessed) =
+        verify_snarks::<AS>(&mut builder, params, snarks, universality);
 
     let ctx = builder.main(0);
     let mut make_public: Vec<AssignedValue<Fr>> = vec![];
@@ -66,10 +60,13 @@ pub fn aggregator<AS>(
 
 #[cfg(test)]
 mod tests {
-    use ark_std::{ end_timer, start_timer };
+    use ark_std::{end_timer, start_timer};
     use halo2_base::{
-        gates::{ circuit::{ builder::BaseCircuitBuilder, CircuitBuilderStage }, GateInstructions },
-        halo2_proofs::{ arithmetic::Field, dev::MockProver, halo2curves::grumpkin::Fq as Fr },
+        gates::{
+            circuit::{builder::BaseCircuitBuilder, CircuitBuilderStage},
+            GateInstructions,
+        },
+        halo2_proofs::{arithmetic::Field, dev::MockProver, halo2curves::grumpkin::Fq as Fr},
         utils::fs::gen_srs,
         AssignedValue,
     };
@@ -77,15 +74,13 @@ mod tests {
     use snark_verifier_sdk::{
         gen_pk,
         halo2::{
-            aggregation::{ AggregationConfigParams, VerifierUniversality },
-            gen_dummy_snark_from_protocol,
-            gen_snark_gwc,
+            aggregation::{AggregationConfigParams, VerifierUniversality},
+            gen_dummy_snark_from_protocol, gen_snark_gwc,
         },
-        CircuitExt,
-        SHPLONK,
+        CircuitExt, SHPLONK,
     };
 
-    use crate::{ utils::run, As };
+    use crate::{utils::run, As};
 
     use super::aggregator;
 
@@ -103,7 +98,7 @@ mod tests {
     fn dummy_voter_circuit(
         builder: &mut BaseCircuitBuilder<Fr>,
         input: DummyCircuitInput,
-        make_public: &mut Vec<AssignedValue<Fr>>
+        make_public: &mut Vec<AssignedValue<Fr>>,
     ) {
         let a = builder.main(0).load_witness(input.a);
         let b = builder.main(0).load_witness(input.b);
@@ -116,14 +111,14 @@ mod tests {
     fn dummy_aggr_circuit(
         builder: &mut BaseCircuitBuilder<Fr>,
         input: DummyAggrInput,
-        make_public: &mut Vec<AssignedValue<Fr>>
+        make_public: &mut Vec<AssignedValue<Fr>>,
     ) {
         let a = builder.main(0).load_witness(input.a);
         let b = builder.main(0).load_witness(input.b);
 
         builder.main(0).constrain_equal(&a, &a);
         builder.main(0).constrain_equal(&b, &b);
-        let mut agg_inst: Vec<AssignedValue<Fr>> = (0..12).map(|_| { a.clone() }).collect();
+        let mut agg_inst: Vec<AssignedValue<Fr>> = (0..12).map(|_| a.clone()).collect();
         agg_inst.push(a);
         agg_inst.push(b);
         make_public.extend(agg_inst);
@@ -158,16 +153,21 @@ mod tests {
         //     b: Fr::from(2u64),
         // });
 
-        let k = 21u32;
+        let k = 18u32;
 
         let lookup_bits = 8 as usize;
 
         let params = gen_srs(k);
 
-        let dummy_aggr_proof = run::<DummyAggrInput>(21, 8, dummy_aggr_circuit, DummyAggrInput {
-            a: Fr::from(1u64),
-            b: Fr::from(2u64),
-        });
+        let dummy_aggr_proof = run::<DummyAggrInput>(
+            15,
+            8,
+            dummy_aggr_circuit,
+            DummyAggrInput {
+                a: Fr::from(1u64),
+                b: Fr::from(2u64),
+            },
+        );
 
         let dummy_snark = gen_dummy_snark_from_protocol::<As>(dummy_aggr_proof.protocol.clone());
         println!("dumy_snark instances ={:?}", dummy_snark.instances);
@@ -175,15 +175,15 @@ mod tests {
         let mut agg_circuit = aggregator::<SHPLONK>(
             CircuitBuilderStage::Keygen,
             AggregationConfigParams {
-            degree: k,
-            lookup_bits,
-            num_advice: 10,
-            ..Default::default()
-        },
+                degree: k,
+                lookup_bits,
+                num_advice: 10,
+                ..Default::default()
+            },
             &params,
             vec![dummy_snark.clone(), dummy_snark.clone()],
             VerifierUniversality::Full,
-            true
+            true,
         );
 
         let agg_config = agg_circuit.calculate_params(Some(3));
@@ -203,85 +203,85 @@ mod tests {
             &params,
             vec![dummy_aggr_proof.clone(), dummy_aggr_proof.clone()],
             VerifierUniversality::Full,
-            true
-        ).use_break_points(break_points.clone());
+            true,
+        )
+        .use_break_points(break_points.clone());
 
         let agg_config = agg_circuit.calculate_params(Some(3));
         let break_points = agg_circuit.break_points();
 
-        println!("2nd break points={:?}", break_points);
-        println!("agg_config={:?}", agg_config);
-
         let aggr_snark = gen_snark_gwc(&params, &pk, agg_circuit, None::<&str>);
 
-        //    println!("Step Aggr Circuit Started");
+        println!("Step Aggr Circuit Started");
+
+        // let dummy_step_aggr = gen_dummy_snark_from_protocol::<As>(aggr_snark.protocol.clone());
+        println!("aggr_snark instances={:?}", aggr_snark.instances);
+        println!(
+            "dummy_aggr_proof instances={:?}",
+            dummy_aggr_proof.instances
+        );
+
+        let mut step_agg_circuit = aggregator::<SHPLONK>(
+            CircuitBuilderStage::Mock,
+            agg_config,
+            &params,
+            vec![aggr_snark.clone(), dummy_aggr_proof.clone()],
+            VerifierUniversality::Full,
+            true,
+        );
+        let step_agg_config = step_agg_circuit.calculate_params(Some(3));
+        println!("step_agg_config={:?}", step_agg_config);
+
+        println!(
+            "step_aggr_circuit instances={:?}",
+            step_agg_circuit.instances()
+        );
+
+        let x = MockProver::run(k, &step_agg_circuit, step_agg_circuit.instances()).unwrap();
+        x.verify().unwrap();
+
+        //         let start0 = start_timer!(|| "gen vk & pk");
+        //         let pk = gen_pk(&params, &step_agg_circuit, None);
+        //         end_timer!(start0);
+        //         let break_points = step_agg_circuit.break_points();
+
+        //         println!("step_agg_config={:?}", step_agg_config);
+        //         println!("aggr_snark instances={:?}", aggr_snark.instances);
+        //         println!("dummy_aggr_proof instances={:?}", dummy_aggr_proof.instances);
+
+        //         println!("Step Aggr Circuit Started");
         //         let mut step_agg_circuit = aggregator::<SHPLONK>(
         //             CircuitBuilderStage::Mock,
-        //             agg_config,
+        //             step_agg_config,
         //             &params,
         //             vec![aggr_snark.clone(), dummy_aggr_proof.clone()],
         //             VerifierUniversality::Full,
         //             true
         //         ).use_break_points(break_points.clone());
         //         println!("Step Aggr Ciruit completed");
+
         //         let step_agg_config = step_agg_circuit.calculate_params(Some(3));
         //         println!("step_agg_config={:?}", step_agg_config);
-        //         let step_aggr_snark = gen_snark_gwc(&params, &pk, step_agg_circuit, None::<&str>);
+        //         let break_points = step_agg_circuit.break_points();
 
-        let dummy_step_aggr = gen_dummy_snark_from_protocol::<As>(aggr_snark.protocol.clone());
-        println!("dummy_step_aggr instances={:?}", dummy_step_aggr.instances);
-        println!("dummy_aggr_proof instances={:?}", dummy_aggr_proof.instances);
+        //      let step_aggr_proof=gen_snark_gwc(&params, &pk, step_agg_circuit, None::<&str>);
 
-        let mut step_agg_circuit = aggregator::<SHPLONK>(
-            CircuitBuilderStage::Keygen,
-            AggregationConfigParams {
-            degree: k,
-            lookup_bits,
-            num_advice: 10,
-            ..Default::default()
-        },
-            &params,
-            vec![dummy_step_aggr.clone(), dummy_aggr_proof.clone()],
-            VerifierUniversality::Full,
-            true
-        );
-        let step_agg_config = step_agg_circuit.calculate_params(Some(3));
-        println!("step_agg_config={:?}", step_agg_config);
+        //  println!("Step Aggr Circuit-2 Started");
+        //         let mut step_agg_circuit = aggregator::<SHPLONK>(
+        //             CircuitBuilderStage::Mock,
+        //             step_agg_config,
+        //             &params,
+        //             vec![step_aggr_proof.clone(), dummy_aggr_proof.clone()],
+        //             VerifierUniversality::Full,
+        //             true
+        //         ).use_break_points(break_points.clone());
+        //         println!("Step Aggr Ciruit-2 completed");
 
-        let start0 = start_timer!(|| "gen vk & pk");
-        let pk = gen_pk(&params, &step_agg_circuit, None);
-        end_timer!(start0);
-        let break_points = step_agg_circuit.break_points();
+        //         let step_agg_config = step_agg_circuit.calculate_params(Some(3));
+        //         println!("step_agg_config-2={:?}", step_agg_config);
+        //         let break_points = step_agg_circuit.break_points();
 
-        println!("step_agg_config={:?}", step_agg_config);
-        println!("aggr_snark instances={:?}", aggr_snark.instances);
-        println!("dummy_aggr_proof instances={:?}", dummy_aggr_proof.instances);
-
-        println!("Step Aggr Circuit Started");
-        let mut step_agg_circuit = aggregator::<SHPLONK>(
-            CircuitBuilderStage::Mock,
-            step_agg_config,
-            &params,
-            vec![aggr_snark.clone(), dummy_aggr_proof.clone()],
-            VerifierUniversality::Full,
-            true
-        ).use_break_points(break_points.clone());
-        println!("Step Aggr Ciruit completed");
-
-        let step_agg_config = step_agg_circuit.calculate_params(Some(3));
-        println!("step_agg_config={:?}", step_agg_config);
-        let break_points = step_agg_circuit.break_points();
-
-        println!("num instances={:?}", step_agg_circuit.num_instance());
-        let instances = step_agg_circuit.instances();
-        println!("instances={:?}", instances);
-
-        let x = MockProver::run(k, &step_agg_circuit, instances).unwrap();
-        x.verify().unwrap();
-
-        //     let step_aggr_snark = gen_snark_gwc(&params, &pk, step_agg_circuit, None::<&str>);
-
-        //     );
+        //         let x=MockProver::run(k, &step_agg_circuit, step_agg_circuit.instances()).unwrap();
+        //         x.verify().unwrap();
     }
 }
-//home/user/project/clone-project/zksnap-circuits-halo2/params
