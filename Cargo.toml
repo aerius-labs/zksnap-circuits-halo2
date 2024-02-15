@@ -21,3 +21,4 @@ rand = "0.8.5"
 serde ="1.0.196"
 snark-verifier-sdk = "0.1.7"
 num-bigint = { version = "0.4.4", features = ["serde"] }
+rand_chacha = "0.3.1"

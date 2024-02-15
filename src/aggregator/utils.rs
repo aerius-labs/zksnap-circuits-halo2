@@ -1,11 +1,11 @@
 use halo2_ecc::bigint::OverflowInteger;
 use num_bigint::BigUint;
 
+use crate::aggregator::{AggregatorCircuitInput, IndexedMerkleLeaf};
 use crate::merkletree::native::MerkleTree;
-use crate::aggregator::{ AggregatorCircuitInput, IndexedMerkleLeaf };
 use halo2_base::halo2_proofs::arithmetic::Field;
 use halo2_base::halo2_proofs::halo2curves::grumpkin::Fq as Fr;
-use halo2_base::utils::{ fe_to_biguint, BigPrimeField };
+use halo2_base::utils::{fe_to_biguint, BigPrimeField};
 
 use num_traits::Zero;
 use pse_poseidon::Poseidon;
@@ -18,10 +18,9 @@ pub(crate) fn paillier_enc_native(n: &BigUint, g: &BigUint, m: &BigUint, r: &Big
 }
 
 pub(crate) fn to_biguint<F: BigPrimeField>(int: OverflowInteger<F>, limb_bits: usize) -> BigUint {
-    int.limbs
-        .iter()
-        .rev()
-        .fold(BigUint::zero(), |acc, acell| { (acc << limb_bits) + fe_to_biguint(acell.value()) })
+    int.limbs.iter().rev().fold(BigUint::zero(), |acc, acell| {
+        (acc << limb_bits) + fe_to_biguint(acell.value())
+    })
 }
 
 pub(crate) fn generate_idx_input(n: BigUint, g: BigUint) -> AggregatorCircuitInput {
@@ -54,7 +53,10 @@ pub(crate) fn generate_idx_input(n: BigUint, g: BigUint) -> AggregatorCircuitInp
         next_idx: Fr::from(0u64),
     };
     let (low_leaf_proof, low_leaf_proof_helper) = tree.get_proof(0);
-    assert_eq!(tree.verify_proof(&leaves[0], 0, &tree.get_root(), &low_leaf_proof), true);
+    assert_eq!(
+        tree.verify_proof(&leaves[0], 0, &tree.get_root(), &low_leaf_proof),
+        true
+    );
 
     // compute interim state change
     let new_low_leaf = IndexedMerkleLeaf::<Fr> {
@@ -62,11 +64,18 @@ pub(crate) fn generate_idx_input(n: BigUint, g: BigUint) -> AggregatorCircuitInp
         next_val: new_val,
         next_idx: Fr::from(1u64),
     };
-    native_hasher.update(&[new_low_leaf.val, new_low_leaf.next_val, new_low_leaf.next_idx]);
+    native_hasher.update(&[
+        new_low_leaf.val,
+        new_low_leaf.next_val,
+        new_low_leaf.next_idx,
+    ]);
     leaves[0] = native_hasher.squeeze_and_reset();
     tree = MerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
     let (new_leaf_proof, new_leaf_proof_helper) = tree.get_proof(1);
-    assert_eq!(tree.verify_proof(&leaves[1], 1, &tree.get_root(), &new_leaf_proof), true);
+    assert_eq!(
+        tree.verify_proof(&leaves[1], 1, &tree.get_root(), &new_leaf_proof),
+        true
+    );
 
     native_hasher.update(&[new_val, Fr::from(0u64), Fr::from(0u64)]);
     leaves[1] = native_hasher.squeeze_and_reset();
