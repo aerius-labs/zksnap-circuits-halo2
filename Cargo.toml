@@ -1,5 +1,5 @@
 [package]
-name = "aggr-circuit"
+name = "zksnap-halo2"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,15 +10,18 @@ biguint-halo2 = { git = "https://github.com/aerius-labs/biguint-halo2" }
 paillier-chip = { git = "https://github.com/aerius-labs/paillier-halo2.git" }
 indexed-merkle-tree-halo2 = { git = "https://github.com/aerius-labs/indexed-merkle-tree-halo2" , branch = "feat/aggr-indexed" }
 pse-poseidon = { git = "https://github.com/aerius-labs/pse-poseidon.git", branch = "feat/stateless-hash" }
+halo2-base = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve" }
+halo2-ecc = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve" }
+halo2 = { git = "https://github.com/shreyas-londhe/zk-nullifier-sig.git", branch = "feat/plume-halo2" }
 ark-std = "0.4.0"
 getset = "0.1.2"
-halo2-base = "0.4.1"
-halo2-ecc = "0.4.1"
 itertools = "0.12.0"
 poseidon-rs = "0.0.10"
 num-traits = "0.2.17"
 rand = "0.8.5"
 serde ="1.0.196"
-snark-verifier-sdk = "0.1.7"
 num-bigint = { version = "0.4.4", features = ["serde"] }
 rand_chacha = "0.3.1"
+sha2 = "0.10.8"
+k256 = { version = "0.13.3", features = ["arithmetic", "hash2curve", "expose-field", "sha2"]}
+elliptic-curve = "0.13.8"

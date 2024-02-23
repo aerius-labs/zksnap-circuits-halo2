@@ -97,5 +97,4 @@ impl<'a, F: BigPrimeField, const T: usize, const RATE: usize> MerkleTree<'a, F, 
 
         computed_hash == *root
     }
-    pub(crate) fn get_leaf(idx: usize) {}
 }
