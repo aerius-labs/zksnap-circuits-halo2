@@ -2,7 +2,7 @@ use halo2_base::poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher};
 use halo2_base::{
     gates::{RangeChip, RangeInstructions},
     halo2_proofs::{circuit::Value, halo2curves::bn256::Fr},
-    utils::{testing::base_test, BigPrimeField, ScalarField},
+    utils::{testing::base_test, BigPrimeField},
     AssignedValue, Context,
 };
 use indexed_merkle_tree_halo2::indexed_merkle_tree::{insert_leaf, IndexedMerkleTreeLeaf};
@@ -39,7 +39,6 @@ pub struct IndexTreeInput<F: BigPrimeField> {
 #[derive(Debug, Clone)]
 pub struct StateTranInput<F: BigPrimeField> {
     pk_enc: EncryptionPublicKey,
-    proposal_id: F,
     inc_enc_vote: Vec<BigUint>,
     prev_enc_vote: Vec<BigUint>,
     indx_tree: IndexTreeInput<F>,
@@ -50,6 +49,7 @@ pub fn state_trans_circuit(
     input: StateTranInput<Fr>,
     public_inputs: &mut Vec<AssignedValue<Fr>>,
 ) {
+    let mut output = Vec::<AssignedValue<Fr>>::new();
     let biguint_chip = BigUintChip::construct(range, LIMB_BIT_LEN);
     let paillier_chip = PaillierChip::construct(&biguint_chip, ENC_BIT_LEN);
     let n_assigned = biguint_chip
@@ -154,36 +154,9 @@ pub fn state_trans_circuit(
         &new_leaf_proof,
         &new_leaf_proof_helper,
         &is_new_leaf_largest,
-    )
+    );
 }
-// #[test]
-// fn test_voter_add() {
-//     let mut rng = thread_rng();
 
-//     let n = rng.gen_biguint(ENC_BIT_LEN as u64);
-//     let g = rng.gen_biguint(ENC_BIT_LEN as u64);
-//     let pk_enc = EncryptionPublicKey { n, g };
-//     let inc_enc_vote = (0..5).map(|_| { rng.gen_biguint(ENC_BIT_LEN as u64) }).collect::<Vec<_>>();
-//     let prev_enc_vote = (0..5).map(|_| { rng.gen_biguint(ENC_BIT_LEN as u64) }).collect::<Vec<_>>();
-
-//     let input = StateTranInput {
-//         pk_enc,
-//         proposal_id: Fr::from(1u64),
-//         inc_enc_vote,
-//         prev_enc_vote,
-//         Default::default(),
-//     };
-
-//     base_test()
-//         .k(16)
-//         .lookup_bits(15)
-//         .expect_satisfied(true)
-//         .run(|ctx, range| {
-//             let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
-
-//             state_trans_circuit(ctx, range, input, &mut public_inputs)
-//         });
-// }
 #[test]
 fn test_state_trans_circuit() {
     const T: usize = 3;
@@ -254,7 +227,7 @@ fn test_state_trans_circuit() {
     let new_leaf_index = Fr::from(1u64);
     let is_new_leaf_largest = Fr::from(true);
 
-    let IDX_input = IndexTreeInput {
+    let idx_input = IndexTreeInput {
         old_root,
         low_leaf,
         low_leaf_proof,
@@ -278,10 +251,9 @@ fn test_state_trans_circuit() {
 
     let input = StateTranInput {
         pk_enc,
-        proposal_id: Fr::from(1u64),
         inc_enc_vote,
         prev_enc_vote,
-        indx_tree: IDX_input,
+        indx_tree: idx_input,
     };
     base_test()
         .k(16)
