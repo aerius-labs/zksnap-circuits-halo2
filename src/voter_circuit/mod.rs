@@ -1,4 +1,3 @@
-use plume_halo2::plume::{verify_plume, PlumeInput};
 use halo2_base::{
     gates::{GateInstructions, RangeChip, RangeInstructions},
     halo2_proofs::{
@@ -15,6 +14,7 @@ use halo2_ecc::{
     secp256k1::{sha256::Sha256Chip, FpChip, FqChip},
 };
 use num_bigint::BigUint;
+use plume_halo2::plume::{verify_plume, PlumeInput};
 
 use biguint_halo2::big_uint::chip::BigUintChip;
 use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
