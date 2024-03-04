@@ -12,7 +12,7 @@ indexed-merkle-tree-halo2 = { git = "https://github.com/aerius-labs/indexed-merk
 pse-poseidon = { git = "https://github.com/aerius-labs/pse-poseidon.git", branch = "feat/stateless-hash" }
 halo2-base = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve" }
 halo2-ecc = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve" }
-halo2 = { git = "https://github.com/shreyas-londhe/zk-nullifier-sig.git", branch = "feat/plume-halo2" }
+plume-halo2 = { git = "https://github.com/shreyas-londhe/zk-nullifier-sig.git", branch = "feat/plume-halo2" }
 ark-std = "0.4.0"
 getset = "0.1.2"
 itertools = "0.12.0"
