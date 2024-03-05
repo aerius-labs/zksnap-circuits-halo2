@@ -1,20 +1,27 @@
+use std::str::FromStr;
+
+use elliptic_curve::Field;
 use halo2_base::poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher};
+use halo2_base::utils::{fe_to_biguint, ScalarField};
 use halo2_base::{
     gates::{RangeChip, RangeInstructions},
     halo2_proofs::{circuit::Value, halo2curves::bn256::Fr},
     utils::{testing::base_test, BigPrimeField},
     AssignedValue, Context,
 };
+use halo2_ecc::ecc::EccChip;
+use halo2_ecc::fields::fp::FpChip;
 use indexed_merkle_tree_halo2::indexed_merkle_tree::{insert_leaf, IndexedMerkleTreeLeaf};
 use indexed_merkle_tree_halo2::utils::{IndexedMerkleTree, IndexedMerkleTreeLeaf as IMTLeaf};
 use num_bigint::{BigUint, RandBigInt};
 use num_traits::pow;
 use pse_poseidon::Poseidon;
+use rand::rngs::OsRng;
 use rand::thread_rng;
 
 use crate::voter_circuit::EncryptionPublicKey;
 use biguint_halo2::big_uint::chip::BigUintChip;
-use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fq, Secp256k1Affine};
+use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp, Fq, Secp256k1, Secp256k1Affine};
 use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
 
 const ENC_BIT_LEN: usize = 264;
@@ -42,16 +49,48 @@ pub struct StateTranInput<F: BigPrimeField> {
     inc_enc_vote: Vec<BigUint>,
     prev_enc_vote: Vec<BigUint>,
     indx_tree: IndexTreeInput<F>,
+    nullifier: Secp256k1Affine,
 }
-pub fn state_trans_circuit(
-    ctx: &mut Context<Fr>,
-    range: &RangeChip<Fr>,
-    input: StateTranInput<Fr>,
-    public_inputs: &mut Vec<AssignedValue<Fr>>,
+pub fn state_trans_circuit<F: BigPrimeField>(
+    ctx: &mut Context<F>,
+    range: &RangeChip<F>,
+    input: StateTranInput<F>,
+    public_inputs: &mut Vec<AssignedValue<F>>,
 ) {
-    let mut output = Vec::<AssignedValue<Fr>>::new();
+    let mut output = Vec::<AssignedValue<F>>::new();
+
+    let gate = range.gate();
+    let mut hasher = PoseidonHasher::<F, 3, 2>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
+    hasher.initialize_consts(ctx, gate);
+
     let biguint_chip = BigUintChip::construct(range, LIMB_BIT_LEN);
     let paillier_chip = PaillierChip::construct(&biguint_chip, ENC_BIT_LEN);
+
+    let fp_chip = FpChip::<F, Fp>::new(range, LIMB_BIT_LEN, 3);
+    let ecc_chip = EccChip::<F, FpChip<F, Fp>>::new(&fp_chip);
+    let null_clone = input.nullifier.clone();
+    let nullifier = ecc_chip.load_private_unchecked(ctx, (input.nullifier.x, input.nullifier.y));
+    let nulli_x = nullifier.x().limbs();
+    let nulli_y = nullifier.y().limbs();
+    nulli_x.to_vec().extend(nulli_y.to_vec());
+    //let nullifier_hash = hasher.hash_fix_len_array(ctx, gate, nulli_x);
+
+    let nullifier_fr = null_clone
+        .x
+        .to_bytes()
+        .to_vec()
+        .chunks(11)
+        .into_iter()
+        .map(|chunk| F::from_bytes_le(chunk))
+        .collect::<Vec<_>>();
+    let nullifier_assign = nullifier_fr
+        .iter()
+        .map(|x| ctx.load_witness(*x))
+        .collect::<Vec<_>>();
+    let nullifier_hash = hasher.hash_fix_len_array(ctx, gate, &nullifier_assign);
+
+    println!("nullifier_hash: {:?}", nullifier_hash);
+
     let n_assigned = biguint_chip
         .assign_integer(ctx, Value::known(input.pk_enc.n.clone()), ENC_BIT_LEN)
         .unwrap();
@@ -101,6 +140,8 @@ pub fn state_trans_circuit(
     let new_root = ctx.load_witness(input.indx_tree.new_root);
 
     let val = ctx.load_witness(input.indx_tree.new_leaf.val);
+    println!("val: {:?}", val);
+    ctx.constrain_equal(&val, &nullifier_hash);
     let next_val = ctx.load_witness(input.indx_tree.new_leaf.next_val);
     let next_idx = ctx.load_witness(input.indx_tree.new_leaf.next_idx);
 
@@ -134,13 +175,9 @@ pub fn state_trans_circuit(
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
 
-    let gate = range.gate();
-    let mut hasher = PoseidonHasher::<Fr, 3, 2>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
-    hasher.initialize_consts(ctx, gate);
-
     println!("Inserting leaf");
 
-    insert_leaf::<Fr, 3, 2>(
+    insert_leaf::<F, 3, 2>(
         ctx,
         range,
         &hasher,
@@ -163,31 +200,51 @@ fn test_state_trans_circuit() {
     const RATE: usize = 2;
     const R_F: usize = 8;
     const R_P: usize = 57;
+    type F = Fr;
 
     let tree_size = pow(2, 3);
-    let mut leaves = Vec::<Fr>::new();
-    let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
+    let mut leaves = Vec::<F>::new();
+    let mut native_hasher = Poseidon::<F, T, RATE>::new(R_F, R_P);
     let mut rng = thread_rng();
 
     // Filling leaves with dfault values.
     for i in 0..tree_size {
         if i == 0 {
-            native_hasher.update(&[Fr::from(0u64), Fr::from(0u64), Fr::from(0u64)]);
+            native_hasher.update(&[F::from(0u64), F::from(0u64), F::from(0u64)]);
             leaves.push(native_hasher.squeeze_and_reset());
         } else {
-            leaves.push(Fr::from(0u64));
+            leaves.push(F::from(0u64));
         }
     }
-    let mut tree =
-        IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+    let sk = Fq::random(OsRng);
+    let nullifier_affine = Secp256k1Affine::from(Secp256k1::generator() * sk);
+    let nullifier_fr = nullifier_affine
+        .x
+        .to_bytes()
+        .to_vec()
+        .chunks(11)
+        .into_iter()
+        .map(|chunk| F::from_bytes_le(chunk))
+        .collect::<Vec<_>>();
 
-    let new_val = Fr::from(69u64);
+    native_hasher.update(&nullifier_fr);
+    let new_val = native_hasher.squeeze_and_reset();
+    println!("nullifier hash test: {:?}", new_val);
+    let new_val_biguint = fe_to_biguint(&new_val);
+
+    // let str = "103220197667183618101663170908058135042116436";
+    // let new_val_biguint = BigUint::from_str(str).unwrap();
+    // let new_val = Fr::from_u64_digits(&new_val_biguint.to_u64_digits());
+
+    let mut tree =
+        IndexedMerkleTree::<F, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+    println!("num_val: {:?}", new_val);
 
     let old_root = tree.get_root();
-    let low_leaf = IMTLeaf::<Fr> {
-        val: Fr::from(0u64),
-        next_val: Fr::from(0u64),
-        next_idx: Fr::from(0u64),
+    let low_leaf = IMTLeaf::<F> {
+        val: F::from(0u64),
+        next_val: F::from(0u64),
+        next_idx: F::from(0u64),
     };
     let (low_leaf_proof, low_leaf_proof_helper) = tree.get_proof(0);
     assert_eq!(
@@ -196,10 +253,10 @@ fn test_state_trans_circuit() {
     );
 
     // compute interim state change
-    let new_low_leaf = IMTLeaf::<Fr> {
+    let new_low_leaf = IMTLeaf::<F> {
         val: low_leaf.val,
         next_val: new_val,
-        next_idx: Fr::from(1u64),
+        next_idx: F::from(1u64),
     };
     native_hasher.update(&[
         new_low_leaf.val,
@@ -207,25 +264,25 @@ fn test_state_trans_circuit() {
         new_low_leaf.next_idx,
     ]);
     leaves[0] = native_hasher.squeeze_and_reset();
-    tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+    tree = IndexedMerkleTree::<F, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
     let (new_leaf_proof, new_leaf_proof_helper) = tree.get_proof(1);
     assert_eq!(
         tree.verify_proof(&leaves[1], 1, &tree.get_root(), &new_leaf_proof),
         true
     );
 
-    native_hasher.update(&[new_val, Fr::from(0u64), Fr::from(0u64)]);
+    native_hasher.update(&[new_val, F::from(0u64), F::from(0u64)]);
     leaves[1] = native_hasher.squeeze_and_reset();
-    tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+    tree = IndexedMerkleTree::<F, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
 
     let new_root = tree.get_root();
-    let new_leaf = IMTLeaf::<Fr> {
+    let new_leaf = IMTLeaf::<F> {
         val: new_val,
-        next_val: Fr::from(0u64),
-        next_idx: Fr::from(0u64),
+        next_val: F::from(0u64),
+        next_idx: F::from(0u64),
     };
-    let new_leaf_index = Fr::from(1u64);
-    let is_new_leaf_largest = Fr::from(true);
+    let new_leaf_index = F::from(1u64);
+    let is_new_leaf_largest = F::from(true);
 
     let idx_input = IndexTreeInput {
         old_root,
@@ -254,13 +311,14 @@ fn test_state_trans_circuit() {
         inc_enc_vote,
         prev_enc_vote,
         indx_tree: idx_input,
+        nullifier: nullifier_affine,
     };
     base_test()
-        .k(16)
-        .lookup_bits(15)
+        .k(19)
+        .lookup_bits(18)
         .expect_satisfied(true)
         .run(|ctx, range| {
-            let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
+            let mut public_inputs = Vec::<AssignedValue<F>>::new();
 
             state_trans_circuit(ctx, range, input, &mut public_inputs)
         });

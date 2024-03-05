@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 biguint-halo2 = { git = "https://github.com/aerius-labs/biguint-halo2" }
 paillier-chip = { git = "https://github.com/aerius-labs/paillier-halo2.git" }
-indexed-merkle-tree-halo2 = { git = "https://github.com/aerius-labs/indexed-merkle-tree-halo2" , branch = "feat/aggr-indexed" }
+indexed-merkle-tree-halo2 = { git = "https://github.com/aerius-labs/indexed-merkle-tree-halo2.git" , branch = "feat/aggr-indexed" }
 pse-poseidon = { git = "https://github.com/aerius-labs/pse-poseidon.git", branch = "feat/stateless-hash" }
 halo2-base = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve" }
 halo2-ecc = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve" }
