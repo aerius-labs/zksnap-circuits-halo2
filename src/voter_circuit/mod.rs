@@ -14,7 +14,7 @@ use halo2_ecc::{
     secp256k1::{sha256::Sha256Chip, FpChip, FqChip},
 };
 use num_bigint::BigUint;
-use plume_halo2::plume::{verify_plume, PlumeInput};
+use plume_halo2::plume::{compress_point, verify_plume, PlumeInput};
 
 use biguint_halo2::big_uint::chip::BigUintChip;
 use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
@@ -124,6 +124,7 @@ pub fn voter_circuit<F: BigPrimeField>(
         g: g_assigned,
     };
 
+
     // 1. Verify if the voter is in the membership tree
     verify_membership_proof(
         ctx,
@@ -143,6 +144,7 @@ pub fn voter_circuit<F: BigPrimeField>(
             .encrypt(ctx, &pk_enc, &vote_assigned[i], &r_assigned[i])
             .unwrap();
 
+        //ENC_VOTE
         public_inputs.append(&mut _vote_enc.limbs().to_vec());
     }
 
@@ -163,12 +165,35 @@ pub fn voter_circuit<F: BigPrimeField>(
         }
         ctx.constrain_equal(&_proposal_id, &proposal_id);
     }
-    let plume_input = PlumeInput::new(nullifier, s_nullifier, c_nullifier, pk_voter, message);
+    let compressed_nullifier=compress_point(ctx, range, &nullifier);
+  
+    let plume_input = PlumeInput::new(nullifier, s_nullifier.clone(), c_nullifier, pk_voter, message);
     verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
+
+    //NULLIFIER
+    public_inputs.append(&mut compressed_nullifier.to_vec());
+
+    //MERKLE_ROOT
+    public_inputs.append(&mut [membership_root].to_vec());
+
+    //PK_ENC_g
+    public_inputs.append(&mut pk_enc.g.limbs().to_vec());
+
+    //PK_ENC_n
+    public_inputs.append(&mut pk_enc.n.limbs().to_vec());
+
+    //PROPOSAL_ID
+    public_inputs.append(&mut [proposal_id].to_vec());
+
+    //S_NULLIFIER
+    public_inputs.append(&mut s_nullifier.limbs().to_vec());
+
+
+    
 }
 
 #[cfg(test)]
-mod test {
+    mod test {
     use halo2_base::halo2_proofs::arithmetic::{CurveAffine, Field};
     use halo2_base::halo2_proofs::halo2curves::ff::PrimeField;
     use halo2_base::halo2_proofs::halo2curves::group::Curve;
@@ -197,7 +222,7 @@ mod test {
         voter_circuit, EncryptionPublicKey, VoterCircuitInput, ENC_BIT_LEN, RATE, R_F, R_P, T,
     };
 
-    fn compress_point(point: &Secp256k1Affine) -> [u8; 33] {
+   pub fn compress_point(point: &Secp256k1Affine) -> [u8; 33] {
         let mut x = point.x.to_bytes();
         x.reverse();
         let y_is_odd = if point.y.is_odd().unwrap_u8() == 1u8 {
