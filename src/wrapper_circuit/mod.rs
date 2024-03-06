@@ -294,7 +294,7 @@ mod common {
 
 mod vertical {
     use halo2_base::gates::circuit::{ builder::BaseCircuitBuilder, BaseConfig };
-
+    use crate::voter_circuit::voter_circuit;
     use super::*;
 
     #[derive(Clone, Default)]

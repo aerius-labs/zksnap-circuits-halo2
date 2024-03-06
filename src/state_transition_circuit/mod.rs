@@ -1,6 +1,10 @@
 use std::str::FromStr;
 
 use elliptic_curve::Field;
+use halo2_base::gates::circuit::builder::BaseCircuitBuilder;
+use halo2_base::gates::circuit::{BaseCircuitParams, BaseConfig, CircuitBuilderStage};
+use halo2_base::halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
+use halo2_base::halo2_proofs::plonk::{Circuit, ConstraintSystem, Error};
 use halo2_base::poseidon::hasher::{ spec::OptimizedPoseidonSpec, PoseidonHasher };
 use halo2_base::utils::{ fe_to_biguint, ScalarField };
 use halo2_base::{
@@ -202,6 +206,52 @@ pub fn state_trans_circuit<F: BigPrimeField>(
 
     println!("public_inputs: {:?}", public_inputs.len());
 
+}
+
+pub struct StateTransitionCircuit<F: BigPrimeField> {
+     input: StateTranInput<F>,
+     inner:BaseCircuitBuilder<F>
+}
+
+impl <F:BigPrimeField> StateTransitionCircuit<F>{
+    pub fn new(input: StateTranInput<F>) -> Self {
+        let mut inner = BaseCircuitBuilder::from_stage(CircuitBuilderStage::Mock);
+
+         let range=inner.range_chip();
+        let ctx=inner.main(0);
+
+        let mut public_inputs = Vec::<AssignedValue<F>>::new();
+
+        state_trans_circuit(ctx,& range, input.clone(), &mut public_inputs);
+        Self { input, inner }
+    }
+}
+
+
+impl<F:BigPrimeField> Circuit<F> for StateTransitionCircuit<F>{
+    type Config = BaseConfig<F>;
+    type FloorPlanner = SimpleFloorPlanner;
+    type Params = BaseCircuitParams;
+
+    fn params(&self) -> Self::Params {
+        self.inner.params()
+    }
+
+    fn without_witnesses(&self) -> Self {
+        unimplemented!()
+    }
+
+    fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
+        BaseCircuitBuilder::configure_with_params(meta, params)
+    }
+
+    fn configure(_: &mut ConstraintSystem<F>) -> Self::Config {
+        unreachable!()
+    }
+
+    fn synthesize(&self, config: Self::Config, layouter: impl Layouter<F>) -> Result<(), Error> {
+        self.inner.synthesize(config, layouter)
+    }
 }
 
 // mod test{
