@@ -27,7 +27,7 @@ use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
 const ENC_BIT_LEN: usize = 264;
 const LIMB_BIT_LEN: usize = 88;
 
-//TODO: Deserialize,Clone and Default for IndexedMerkleTreeLeaf
+//TODO: Constrain the nullifier hash using x and y limbs
 
 #[derive(Debug, Clone)]
 pub struct IndexTreeInput<F: BigPrimeField> {
@@ -140,7 +140,6 @@ pub fn state_trans_circuit<F: BigPrimeField>(
     let new_root = ctx.load_witness(input.indx_tree.new_root);
 
     let val = ctx.load_witness(input.indx_tree.new_leaf.val);
-    println!("val: {:?}", val);
     ctx.constrain_equal(&val, &nullifier_hash);
     let next_val = ctx.load_witness(input.indx_tree.new_leaf.next_val);
     let next_idx = ctx.load_witness(input.indx_tree.new_leaf.next_idx);
@@ -175,7 +174,7 @@ pub fn state_trans_circuit<F: BigPrimeField>(
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
 
-    println!("Inserting leaf");
+    //TODO: works for 252 num_bits ,make it working for 254 num_bits
 
     insert_leaf::<F, 3, 2>(
         ctx,
@@ -192,6 +191,8 @@ pub fn state_trans_circuit<F: BigPrimeField>(
         &new_leaf_proof_helper,
         &is_new_leaf_largest,
     );
+
+    //TODO: Output the public outputs
 }
 
 #[test]
