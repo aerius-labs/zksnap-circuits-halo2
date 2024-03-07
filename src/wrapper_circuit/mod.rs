@@ -296,7 +296,6 @@
 //     use crate::voter_circuit::{VoterCircuit,VoterCircuitInput};
 //     use super::*;
 
-   
 //     impl CircuitExt<Fr> for VoterCircuit<Fr>{
 //         fn num_instance() -> Vec<usize> {
 //             vec![1] // [val]
@@ -356,13 +355,10 @@
 
 //     use crate::voter_circuit::{VoterCircuit,VoterCircuitInput};
 
-
 //     use super::*;
 
 //     type BaseFieldEccChip<'chip> = halo2_ecc::ecc::BaseFieldEccChip<'chip, G1Affine>;
 //     type Halo2Loader<'chip> = loader::halo2::Halo2Loader<G1Affine, BaseFieldEccChip<'chip>>;
-
-
 
 //     fn succinct_verify<'a>(
 //         svk: &Svk,
