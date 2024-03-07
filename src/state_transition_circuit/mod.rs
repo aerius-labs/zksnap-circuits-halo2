@@ -2,9 +2,9 @@ use std::str::FromStr;
 
 use elliptic_curve::Field;
 use halo2_base::gates::circuit::builder::BaseCircuitBuilder;
-use halo2_base::gates::circuit::{BaseCircuitParams, BaseConfig, CircuitBuilderStage};
-use halo2_base::halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
-use halo2_base::halo2_proofs::plonk::{Circuit, ConstraintSystem, Error};
+use halo2_base::gates::circuit::{ BaseCircuitParams, BaseConfig, CircuitBuilderStage };
+use halo2_base::halo2_proofs::circuit::{ Layouter, SimpleFloorPlanner };
+use halo2_base::halo2_proofs::plonk::{ Circuit, ConstraintSystem, Error };
 use halo2_base::poseidon::hasher::{ spec::OptimizedPoseidonSpec, PoseidonHasher };
 use halo2_base::utils::{ fe_to_biguint, ScalarField };
 use halo2_base::{
@@ -205,30 +205,28 @@ pub fn state_trans_circuit<F: BigPrimeField>(
     }
 
     println!("public_inputs: {:?}", public_inputs.len());
-
 }
 
 pub struct StateTransitionCircuit<F: BigPrimeField> {
-     input: StateTranInput<F>,
-     inner:BaseCircuitBuilder<F>
+    input: StateTranInput<F>,
+    pub inner: BaseCircuitBuilder<F>,
 }
 
-impl <F:BigPrimeField> StateTransitionCircuit<F>{
+impl<F: BigPrimeField> StateTransitionCircuit<F> {
     pub fn new(input: StateTranInput<F>) -> Self {
         let mut inner = BaseCircuitBuilder::from_stage(CircuitBuilderStage::Mock);
 
-         let range=inner.range_chip();
-        let ctx=inner.main(0);
+        let range = inner.range_chip();
+        let ctx = inner.main(0);
 
         let mut public_inputs = Vec::<AssignedValue<F>>::new();
 
-        state_trans_circuit(ctx,& range, input.clone(), &mut public_inputs);
+        state_trans_circuit(ctx, &range, input.clone(), &mut public_inputs);
         Self { input, inner }
     }
 }
 
-
-impl<F:BigPrimeField> Circuit<F> for StateTransitionCircuit<F>{
+impl<F: BigPrimeField> Circuit<F> for StateTransitionCircuit<F> {
     type Config = BaseConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
     type Params = BaseCircuitParams;
@@ -254,155 +252,141 @@ impl<F:BigPrimeField> Circuit<F> for StateTransitionCircuit<F>{
     }
 }
 
-// mod test{
+mod test {
+    use super::*;
 
-// use super::*;
+    use halo2_base::halo2_proofs::halo2curves::secp256k1::{
+        Fp,
+        Fq,
+        Secp256k1,
+        Secp256k1Affine as NavSecp,
+    };
 
-//     use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp, Fq, Secp256k1, Secp256k1Affine as NavSecp};
+    fn comp_pt(point: &NavSecp) -> [u8; 33] {
+        let mut x = point.x.to_bytes();
+        x.reverse();
 
-// fn comp_pt(point: &NavSecp) -> [u8; 33] {
-//         let mut x = point.x.to_bytes();
-//         x.reverse();
+        let y_is_odd = if point.y.is_odd().unwrap_u8() == 1u8 { 3u8 } else { 2u8 };
+        let mut compressed_pk = [0u8; 33];
+        compressed_pk[0] = y_is_odd;
+        compressed_pk[1..].copy_from_slice(&x);
 
-//         let y_is_odd = if point.y.is_odd().unwrap_u8() == 1u8 {
-//             3u8
-//         } else {
-//             2u8
-//         };
-//         let mut compressed_pk = [0u8; 33];
-//         compressed_pk[0] = y_is_odd;
-//         compressed_pk[1..].copy_from_slice(&x);
+        compressed_pk
+    }
+    #[test]
+    fn test_state_trans_circuit() {
+        const T: usize = 3;
+        const RATE: usize = 2;
+        const R_F: usize = 8;
+        const R_P: usize = 57;
+        type F = Fr;
 
-//         compressed_pk
-//     }
-// #[test]
-// fn test_state_trans_circuit() {
-//     const T: usize = 3;
-//     const RATE: usize = 2;
-//     const R_F: usize = 8;
-//     const R_P: usize = 57;
-//     type F = Fr;
+        let tree_size = pow(2, 3);
+        let mut leaves = Vec::<F>::new();
+        let mut native_hasher = Poseidon::<F, T, RATE>::new(R_F, R_P);
+        let mut rng = thread_rng();
 
-//     let tree_size = pow(2, 3);
-//     let mut leaves = Vec::<F>::new();
-//     let mut native_hasher = Poseidon::<F, T, RATE>::new(R_F, R_P);
-//     let mut rng = thread_rng();
+        // Filling leaves with dfault values.
+        for i in 0..tree_size {
+            if i == 0 {
+                native_hasher.update(&[F::from(0u64), F::from(0u64), F::from(0u64)]);
+                leaves.push(native_hasher.squeeze_and_reset());
+            } else {
+                leaves.push(F::from(0u64));
+            }
+        }
+        let sk = Fq::random(OsRng);
+        let nullifier_affine = NavSecp::from(NavSecp::generator() * sk);
+        let nullifier_fr = nullifier_affine.x
+            .to_bytes()
+            .to_vec()
+            .chunks(11)
+            .into_iter()
+            .map(|chunk| F::from_bytes_le(chunk))
+            .collect::<Vec<_>>();
+        native_hasher.update(&nullifier_fr);
 
-//     // Filling leaves with dfault values.
-//     for i in 0..tree_size {
-//         if i == 0 {
-//             native_hasher.update(&[F::from(0u64), F::from(0u64), F::from(0u64)]);
-//             leaves.push(native_hasher.squeeze_and_reset());
-//         } else {
-//             leaves.push(F::from(0u64));
-//         }
-//     }
-//     let sk = Fq::random(OsRng);
-//     let nullifier_affine = NavSecp::from(NavSecp::generator() * sk);
-//     let nullifier_fr = nullifier_affine
-//         .x
-//         .to_bytes()
-//         .to_vec()
-//         .chunks(11)
-//         .into_iter()
-//         .map(|chunk| F::from_bytes_le(chunk))
-//         .collect::<Vec<_>>();
-//     native_hasher.update(&nullifier_fr);
+        let compressed_nullifier = comp_pt(&nullifier_affine);
 
-// let compressed_nullifier=comp_pt(&nullifier_affine);
+        let new_val = native_hasher.squeeze_and_reset();
+        println!("nullifier hash test: {:?}", new_val);
 
-//     let new_val = native_hasher.squeeze_and_reset();
-//     println!("nullifier hash test: {:?}", new_val);
+        // let str = "103220197667183618101663170908058135042116436";
+        // let new_val_biguint = BigUint::from_str(str).unwrap();
+        // let new_val = Fr::from_u64_digits(&new_val_biguint.to_u64_digits());
 
-//     // let str = "103220197667183618101663170908058135042116436";
-//     // let new_val_biguint = BigUint::from_str(str).unwrap();
-//     // let new_val = Fr::from_u64_digits(&new_val_biguint.to_u64_digits());
+        let mut tree = IndexedMerkleTree::<F, T, RATE>
+            ::new(&mut native_hasher, leaves.clone())
+            .unwrap();
+        println!("num_val: {:?}", new_val);
 
-//     let mut tree =
-//         IndexedMerkleTree::<F, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
-//     println!("num_val: {:?}", new_val);
+        let old_root = tree.get_root();
+        let low_leaf = IMTLeaf::<F> {
+            val: F::from(0u64),
+            next_val: F::from(0u64),
+            next_idx: F::from(0u64),
+        };
+        let (low_leaf_proof, low_leaf_proof_helper) = tree.get_proof(0);
+        assert_eq!(tree.verify_proof(&leaves[0], 0, &tree.get_root(), &low_leaf_proof), true);
 
-//     let old_root = tree.get_root();
-//     let low_leaf = IMTLeaf::<F> {
-//         val: F::from(0u64),
-//         next_val: F::from(0u64),
-//         next_idx: F::from(0u64),
-//     };
-//     let (low_leaf_proof, low_leaf_proof_helper) = tree.get_proof(0);
-//     assert_eq!(
-//         tree.verify_proof(&leaves[0], 0, &tree.get_root(), &low_leaf_proof),
-//         true
-//     );
+        // compute interim state change
+        let new_low_leaf = IMTLeaf::<F> {
+            val: low_leaf.val,
+            next_val: new_val,
+            next_idx: F::from(1u64),
+        };
+        native_hasher.update(&[new_low_leaf.val, new_low_leaf.next_val, new_low_leaf.next_idx]);
+        leaves[0] = native_hasher.squeeze_and_reset();
+        tree = IndexedMerkleTree::<F, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+        let (new_leaf_proof, new_leaf_proof_helper) = tree.get_proof(1);
+        assert_eq!(tree.verify_proof(&leaves[1], 1, &tree.get_root(), &new_leaf_proof), true);
 
-//     // compute interim state change
-//     let new_low_leaf = IMTLeaf::<F> {
-//         val: low_leaf.val,
-//         next_val: new_val,
-//         next_idx: F::from(1u64),
-//     };
-//     native_hasher.update(&[
-//         new_low_leaf.val,
-//         new_low_leaf.next_val,
-//         new_low_leaf.next_idx,
-//     ]);
-//     leaves[0] = native_hasher.squeeze_and_reset();
-//     tree = IndexedMerkleTree::<F, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
-//     let (new_leaf_proof, new_leaf_proof_helper) = tree.get_proof(1);
-//     assert_eq!(
-//         tree.verify_proof(&leaves[1], 1, &tree.get_root(), &new_leaf_proof),
-//         true
-//     );
+        native_hasher.update(&[new_val, F::from(0u64), F::from(0u64)]);
+        leaves[1] = native_hasher.squeeze_and_reset();
+        tree = IndexedMerkleTree::<F, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
 
-//     native_hasher.update(&[new_val, F::from(0u64), F::from(0u64)]);
-//     leaves[1] = native_hasher.squeeze_and_reset();
-//     tree = IndexedMerkleTree::<F, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+        let new_root = tree.get_root();
+        let new_leaf = IMTLeaf::<F> {
+            val: new_val,
+            next_val: F::from(0u64),
+            next_idx: F::from(0u64),
+        };
+        let new_leaf_index = F::from(1u64);
+        let is_new_leaf_largest = F::from(true);
 
-//     let new_root = tree.get_root();
-//     let new_leaf = IMTLeaf::<F> {
-//         val: new_val,
-//         next_val: F::from(0u64),
-//         next_idx: F::from(0u64),
-//     };
-//     let new_leaf_index = F::from(1u64);
-//     let is_new_leaf_largest = F::from(true);
+        let idx_input = IndexTreeInput {
+            old_root,
+            low_leaf,
+            low_leaf_proof,
+            low_leaf_proof_helper,
+            new_root,
+            new_leaf,
+            new_leaf_index,
+            new_leaf_proof,
+            new_leaf_proof_helper,
+            is_new_leaf_largest,
+        };
+        let n = rng.gen_biguint(ENC_BIT_LEN as u64);
+        let g = rng.gen_biguint(ENC_BIT_LEN as u64);
+        let pk_enc = EncryptionPublicKey { n, g };
+        let inc_enc_vote = (0..5).map(|_| rng.gen_biguint(ENC_BIT_LEN as u64)).collect::<Vec<_>>();
+        let prev_enc_vote = (0..5).map(|_| rng.gen_biguint(ENC_BIT_LEN as u64)).collect::<Vec<_>>();
 
-//     let idx_input = IndexTreeInput {
-//         old_root,
-//         low_leaf,
-//         low_leaf_proof,
-//         low_leaf_proof_helper,
-//         new_root,
-//         new_leaf,
-//         new_leaf_index,
-//         new_leaf_proof,
-//         new_leaf_proof_helper,
-//         is_new_leaf_largest,
-//     };
-//     let n = rng.gen_biguint(ENC_BIT_LEN as u64);
-//     let g = rng.gen_biguint(ENC_BIT_LEN as u64);
-//     let pk_enc = EncryptionPublicKey { n, g };
-//     let inc_enc_vote = (0..5)
-//         .map(|_| rng.gen_biguint(ENC_BIT_LEN as u64))
-//         .collect::<Vec<_>>();
-//     let prev_enc_vote = (0..5)
-//         .map(|_| rng.gen_biguint(ENC_BIT_LEN as u64))
-//         .collect::<Vec<_>>();
+        let input = StateTranInput {
+            pk_enc,
+            inc_enc_vote,
+            prev_enc_vote,
+            indx_tree: idx_input,
+            nullifier: nullifier_affine,
+        };
+        base_test()
+            .k(19)
+            .lookup_bits(18)
+            .expect_satisfied(true)
+            .run(|ctx, range| {
+                let mut public_inputs = Vec::<AssignedValue<F>>::new();
 
-//     let input = StateTranInput {
-//         pk_enc,
-//         inc_enc_vote,
-//         prev_enc_vote,
-//         indx_tree: idx_input,
-//         nullifier: nullifier_affine,
-//     };
-//     base_test()
-//         .k(19)
-//         .lookup_bits(18)
-//         .expect_satisfied(true)
-//         .run(|ctx, range| {
-//             let mut public_inputs = Vec::<AssignedValue<F>>::new();
-
-//             state_trans_circuit(ctx, range, input, &mut public_inputs)
-//         });
-// }
-// }
+                state_trans_circuit(ctx, range, input, &mut public_inputs)
+            });
+    }
+}

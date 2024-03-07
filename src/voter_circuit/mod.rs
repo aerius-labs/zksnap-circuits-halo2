@@ -204,12 +204,11 @@ pub fn voter_circuit<F: BigPrimeField>(
 #[derive(Clone, Default)]
 pub struct VoterCircuit<F: BigPrimeField> {
     input: VoterCircuitInput<F>,
-    inner: BaseCircuitBuilder<F>,
+    pub inner: BaseCircuitBuilder<F>,
 }
 
 impl<F: BigPrimeField> VoterCircuit<F> {
-    pub fn new(input: VoterCircuitInput<F>, params: BaseCircuitParams) -> Self {
-        //   let mut inner = BaseCircuitBuilder::new(false).use_params(params);
+    pub fn new(input: VoterCircuitInput<F>) -> Self {
         let mut inner = BaseCircuitBuilder::from_stage(CircuitBuilderStage::Mock);
         inner.set_lookup_bits(14);
         inner.set_k(15);
@@ -218,6 +217,7 @@ impl<F: BigPrimeField> VoterCircuit<F> {
         let ctx = inner.main(0);
 
         voter_circuit(ctx, &range, input.clone(), &mut public_inputs);
+        inner.calculate_params(Some(10));
         Self {
             input,
             inner,
@@ -476,15 +476,8 @@ mod test {
             membership_proof_helper: membership_proof_helper.clone(),
         };
 
-        let config_params = BaseCircuitParams {
-            k: 15 as usize,
-            num_advice_per_phase: vec![10],
-            num_lookup_advice_per_phase: vec![1],
-            num_fixed: 1,
-            lookup_bits: Some(14),
-            num_instance_columns: 0,
-        };
-        let circuit = VoterCircuit::new(input.clone(), config_params);
+ 
+        let circuit = VoterCircuit::new(input.clone());
         let prover = MockProver::run(15, &circuit, vec![]).unwrap();
         prover.verify().unwrap();
 
