@@ -1,4 +1,7 @@
-.vscode/
+# IDE
+.vscode
+.idea
+
 /target
 /Cargo.lock
 /params
