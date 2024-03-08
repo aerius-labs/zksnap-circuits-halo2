@@ -1,4 +1,4 @@
-use halo2::plume::{verify_plume, PlumeInput};
+use plume_halo2::plume::{verify_plume, PlumeInput};
 use halo2_base::{
     gates::{GateInstructions, RangeChip, RangeInstructions},
     halo2_proofs::{
