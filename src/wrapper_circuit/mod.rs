@@ -474,13 +474,13 @@ mod recursion {
                 let mut transcript = PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(
                     snark.proof.as_slice()
                 );
+                println!("snark.instances: {:?}", snark.instances[0].len());
                 let proof = PlonkSuccinctVerifier::read_proof(
                     &svk,
                     &snark.protocol,
                     &snark.instances,
                     &mut transcript
                 ).unwrap();
-                println!("snark.instances: {:?}", snark.instances[0].len());
                 PlonkSuccinctVerifier::verify(
                     &svk,
                     &snark.protocol,
@@ -491,11 +491,23 @@ mod recursion {
 
             let accumulators = iter
                 ::empty()
-                .chain(succinct_verify(&voter))
-                .chain(succinct_verify(&state_transition))
+                .chain({
+                    println!("After voter chain");
+                    let result = succinct_verify(&voter);
+                    result
+                })
+                .chain({
+                    println!("After state_transition chain");
+                    let result = succinct_verify(&state_transition);
+                    result
+                })
                 .chain(
                     (round > 0)
-                        .then(|| succinct_verify(&previous))
+                        .then(|| {
+                            println!("After previous chain");
+                            let result = succinct_verify(&previous);
+                            result
+                        })
                         .unwrap_or_else(|| {
                             let num_accumulator = 1 + previous.protocol.accumulator_indices.len();
                             vec![default_accumulator.clone(); num_accumulator]
@@ -806,17 +818,21 @@ mod recursion {
             Some(voter_vk),
             voter_config.clone()
         );
+        println!("Step 1 done");
         let state_transition_dummy_snark = gen_dummy_snark::<StateTransitionCircuit<Fr>>(
             state_transition_params,
             Some(state_transition_vk),
             state_transition_config.clone()
         );
+        println!("Step 2 done");
+
         let initial_snark = RecursionCircuit::initial_snark(
             recursion_params,
             None,
             recursion_config.clone(),
             vec![Fr::zero(); 30]
         );
+        println!("Step 3 done");
 
         let recursion = RecursionCircuit::new::<Fr>(
             recursion_params,
@@ -826,6 +842,7 @@ mod recursion {
             0,
             recursion_config
         );
+        println!("Step 4 done");
         // we cannot auto-configure the circuit because dummy_snark must know the configuration beforehand
         // uncomment the following line only in development to test and print out the optimal configuration ahead of time
         // recursion.inner.0.builder.borrow().config(recursion_params.k() as usize, Some(10));
@@ -857,6 +874,8 @@ mod recursion {
             .into_iter()
             .zip(state_transition_snarks)
             .enumerate() {
+            println!("Generate recursion snark for round {}", round);
+            println!("voter instances 3: {:?}", voter_snark.instances[0].len());
             let recursion = RecursionCircuit::new::<Fr>(
                 recursion_params,
                 voter_snark,
@@ -931,13 +950,8 @@ mod test {
             generate_random_voter_circuit_inputs()
         );
         let voter_pk = gen_pk(&voter_params, &voter_circuit);
-        let mut voter_pk_buffer = Vec::new();
-        voter_pk
-            .write(&mut voter_pk_buffer, halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked)
-            .unwrap();
-        fs::write("data/voter_pk.bin", voter_pk_buffer).unwrap();
-
         let voter_snark = gen_snark(&voter_params, &voter_pk, voter_circuit);
+        println!("voter instances 1: {:?}", voter_snark.instances[0].len());
 
         println!("Generate state transition pk and snark");
         let state_transition_config = BaseCircuitParams {
@@ -961,16 +975,16 @@ mod test {
             state_transition_circuit
         );
 
-        let k = 21;
+        let k = 22;
         let recursion_config = BaseCircuitParams {
-            k: 21 as usize,
-            num_advice_per_phase: vec![15],
+            k,
+            num_advice_per_phase: vec![30],
             num_lookup_advice_per_phase: vec![1],
             num_fixed: 1,
-            lookup_bits: Some(20),
+            lookup_bits: Some(k - 1),
             num_instance_columns: 1,
         };
-        let recursion_params = gen_srs(k);
+        let recursion_params = gen_srs(k as u32);
 
         println!("Generate recursion pk");
         let pk_time = start_timer!(|| "Generate recursion pk");
@@ -986,6 +1000,7 @@ mod test {
         );
         end_timer!(pk_time);
 
+        println!("voter instances 2: {:?}", voter_snark.instances[0].len());
         println!("Generate recursion snark");
         let pf_time = start_timer!(|| "Generate full recursive snark");
         let final_snark = recursion::gen_recursion_snark(
@@ -1000,7 +1015,7 @@ mod test {
             recursion_config,
             vec![voter_snark],
             vec![state_transition_snark],
-            vec![Fr::zero(); 28]
+            vec![Fr::zero(); 30]
         );
         end_timer!(pf_time);
 
