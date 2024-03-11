@@ -1,5 +1,5 @@
 use crate::{
-    state_transition_circuit::{ StateTranInput, ENC_BIT_LEN },
+    state_transition_circuit::{StateTranInput, ENC_BIT_LEN},
     voter_circuit::EncryptionPublicKey,
 };
 
@@ -7,22 +7,27 @@ use super::IndexTreeInput;
 use halo2_base::{
     halo2_proofs::{
         arithmetic::Field,
-        halo2curves::{ bn256::Fr, secp256k1::Secp256k1Affine, secq256k1::Fp },
+        halo2curves::{bn256::Fr, secp256k1::Secp256k1Affine, secq256k1::Fp},
     },
     utils::ScalarField,
 };
-use indexed_merkle_tree_halo2::utils::{ IndexedMerkleTree, IndexedMerkleTreeLeaf as IMTLeaf };
-use num_bigint::{ BigUint, RandBigInt };
+use indexed_merkle_tree_halo2::utils::{IndexedMerkleTree, IndexedMerkleTreeLeaf as IMTLeaf};
+use num_bigint::{BigUint, RandBigInt};
 use num_traits::pow;
 use paillier_chip::paillier::paillier_enc_native;
 use pse_poseidon::Poseidon;
-use rand::{ rngs::OsRng, thread_rng };
+use rand::{rngs::OsRng, thread_rng};
 
 pub fn compress_native_nullifier(point: &Secp256k1Affine) -> [Fr; 4] {
     let y_is_odd = BigUint::from_bytes_le(&point.y.to_bytes_le()) % 2u64;
-    let tag = if y_is_odd == BigUint::from(0u64) { Fr::from(2u64) } else { Fr::from(3u64) };
+    let tag = if y_is_odd == BigUint::from(0u64) {
+        Fr::from(2u64)
+    } else {
+        Fr::from(3u64)
+    };
 
-    let x_limbs = point.x
+    let x_limbs = point
+        .x
         .to_bytes_le()
         .chunks(11)
         .map(|chunk| Fr::from_bytes_le(chunk))
@@ -51,9 +56,8 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTranInput<Fr> {
             leaves.push(Fr::from(0u64));
         }
     }
-    let mut tree = IndexedMerkleTree::<Fr, T, RATE>
-        ::new(&mut native_hasher, leaves.clone())
-        .unwrap();
+    let mut tree =
+        IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
 
     let new_val = Fr::from(69u64);
 
@@ -64,7 +68,10 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTranInput<Fr> {
         next_idx: Fr::from(0u64),
     };
     let (low_leaf_proof, low_leaf_proof_helper) = tree.get_proof(0);
-    assert_eq!(tree.verify_proof(&leaves[0], 0, &tree.get_root(), &low_leaf_proof), true);
+    assert_eq!(
+        tree.verify_proof(&leaves[0], 0, &tree.get_root(), &low_leaf_proof),
+        true
+    );
 
     // compute interim state change
     let new_low_leaf = IMTLeaf::<Fr> {
@@ -72,11 +79,18 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTranInput<Fr> {
         next_val: new_val,
         next_idx: Fr::from(1u64),
     };
-    native_hasher.update(&[new_low_leaf.val, new_low_leaf.next_val, new_low_leaf.next_idx]);
+    native_hasher.update(&[
+        new_low_leaf.val,
+        new_low_leaf.next_val,
+        new_low_leaf.next_idx,
+    ]);
     leaves[0] = native_hasher.squeeze_and_reset();
     tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
     let (new_leaf_proof, new_leaf_proof_helper) = tree.get_proof(1);
-    assert_eq!(tree.verify_proof(&leaves[1], 1, &tree.get_root(), &new_leaf_proof), true);
+    assert_eq!(
+        tree.verify_proof(&leaves[1], 1, &tree.get_root(), &new_leaf_proof),
+        true
+    );
 
     native_hasher.update(&[new_val, Fr::from(0u64), Fr::from(0u64)]);
     leaves[1] = native_hasher.squeeze_and_reset();
@@ -111,26 +125,29 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTranInput<Fr> {
 
     let n = rng.gen_biguint(ENC_BIT_LEN as u64);
     let g = rng.gen_biguint(ENC_BIT_LEN as u64);
-    let pk_enc = EncryptionPublicKey { n: n.clone(), g: g.clone() };
+    let pk_enc = EncryptionPublicKey {
+        n: n.clone(),
+        g: g.clone(),
+    };
     let incoming_vote = (0..5)
-        .map(|_|
+        .map(|_| {
             paillier_enc_native(
                 &n,
                 &g,
                 &rng.gen_biguint(ENC_BIT_LEN as u64),
-                &rng.gen_biguint(ENC_BIT_LEN as u64)
+                &rng.gen_biguint(ENC_BIT_LEN as u64),
             )
-        )
+        })
         .collect::<Vec<_>>();
     let prev_vote = (0..5)
-        .map(|_|
+        .map(|_| {
             paillier_enc_native(
                 &n,
                 &g,
                 &rng.gen_biguint(ENC_BIT_LEN as u64),
-                &rng.gen_biguint(ENC_BIT_LEN as u64)
+                &rng.gen_biguint(ENC_BIT_LEN as u64),
             )
-        )
+        })
         .collect::<Vec<_>>();
 
     let input = StateTranInput {

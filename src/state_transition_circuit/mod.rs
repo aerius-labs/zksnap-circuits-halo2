@@ -1,31 +1,30 @@
 pub mod utils;
 
 use halo2_base::gates::circuit::builder::BaseCircuitBuilder;
-use halo2_base::gates::circuit::{ BaseCircuitParams, BaseConfig, CircuitBuilderStage };
+use halo2_base::gates::circuit::{BaseCircuitParams, BaseConfig, CircuitBuilderStage};
 use halo2_base::gates::GateInstructions;
-use halo2_base::halo2_proofs::circuit::{ Layouter, SimpleFloorPlanner };
-use halo2_base::halo2_proofs::plonk::{ Circuit, ConstraintSystem, Error };
-use halo2_base::poseidon::hasher::{ spec::OptimizedPoseidonSpec, PoseidonHasher };
+use halo2_base::halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
+use halo2_base::halo2_proofs::plonk::{Circuit, ConstraintSystem, Error};
+use halo2_base::poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher};
 use halo2_base::QuantumCell;
 use halo2_base::{
-    gates::{ RangeChip, RangeInstructions },
+    gates::{RangeChip, RangeInstructions},
     halo2_proofs::circuit::Value,
     utils::BigPrimeField,
-    AssignedValue,
-    Context,
+    AssignedValue, Context,
 };
-use halo2_ecc::bigint::{ big_is_even, ProperCrtUint };
-use halo2_ecc::ecc::{ EcPoint, EccChip };
+use halo2_ecc::bigint::{big_is_even, ProperCrtUint};
+use halo2_ecc::ecc::{EcPoint, EccChip};
 use halo2_ecc::fields::fp::FpChip;
-use indexed_merkle_tree_halo2::indexed_merkle_tree::{ insert_leaf, IndexedMerkleTreeLeaf };
+use indexed_merkle_tree_halo2::indexed_merkle_tree::{insert_leaf, IndexedMerkleTreeLeaf};
 use indexed_merkle_tree_halo2::utils::IndexedMerkleTreeLeaf as IMTLeaf;
 use num_bigint::BigUint;
 
 use crate::voter_circuit::EncryptionPublicKey;
 use crate::wrapper_circuit::common::CircuitExt;
 use biguint_halo2::big_uint::chip::BigUintChip;
-use halo2_base::halo2_proofs::halo2curves::secp256k1::{ Fp, Secp256k1Affine };
-use paillier_chip::paillier::{ EncryptionPublicKeyAssigned, PaillierChip };
+use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp, Secp256k1Affine};
+use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
 
 const ENC_BIT_LEN: usize = 176;
 const LIMB_BIT_LEN: usize = 88;
@@ -58,7 +57,7 @@ pub struct StateTranInput<F: BigPrimeField> {
 pub fn compress_nullifier<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,
-    nullifier: &EcPoint<F, ProperCrtUint<F>>
+    nullifier: &EcPoint<F, ProperCrtUint<F>>,
 ) -> Vec<AssignedValue<F>> {
     let mut compressed_pt = Vec::<AssignedValue<F>>::with_capacity(4);
 
@@ -66,17 +65,15 @@ pub fn compress_nullifier<F: BigPrimeField>(
         range,
         ctx,
         nullifier.y().as_ref().truncation.clone(),
-        LIMB_BIT_LEN
+        LIMB_BIT_LEN,
     );
 
-    let tag = range
-        .gate()
-        .select(
-            ctx,
-            QuantumCell::Constant(F::from(2u64)),
-            QuantumCell::Constant(F::from(3u64)),
-            is_y_even
-        );
+    let tag = range.gate().select(
+        ctx,
+        QuantumCell::Constant(F::from(2u64)),
+        QuantumCell::Constant(F::from(3u64)),
+        is_y_even,
+    );
 
     compressed_pt.push(tag);
     compressed_pt.extend(nullifier.x().limbs().to_vec());
@@ -88,7 +85,7 @@ pub fn state_trans_circuit<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,
     input: StateTranInput<F>,
-    public_inputs: &mut Vec<AssignedValue<F>>
+    public_inputs: &mut Vec<AssignedValue<F>>,
 ) {
     let gate = range.gate();
     let mut hasher = PoseidonHasher::<F, 3, 2>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
@@ -117,16 +114,22 @@ pub fn state_trans_circuit<F: BigPrimeField>(
         g: g_assigned,
     };
 
-    let incoming_vote = input.incoming_vote
+    let incoming_vote = input
+        .incoming_vote
         .iter()
         .map(|x| {
-            biguint_chip.assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2).unwrap()
+            biguint_chip
+                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2)
+                .unwrap()
         })
         .collect::<Vec<_>>();
-    let prev_vote = input.prev_vote
+    let prev_vote = input
+        .prev_vote
         .iter()
         .map(|x| {
-            biguint_chip.assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2).unwrap()
+            biguint_chip
+                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2)
+                .unwrap()
         })
         .collect::<Vec<_>>();
 
@@ -159,19 +162,27 @@ pub fn state_trans_circuit<F: BigPrimeField>(
     let new_leaf_index = ctx.load_witness(input.nullifier_tree.new_leaf_index);
     let is_new_leaf_largest = ctx.load_witness(input.nullifier_tree.is_new_leaf_largest);
 
-    let low_leaf_proof = input.nullifier_tree.low_leaf_proof
+    let low_leaf_proof = input
+        .nullifier_tree
+        .low_leaf_proof
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let low_leaf_proof_helper = input.nullifier_tree.low_leaf_proof_helper
+    let low_leaf_proof_helper = input
+        .nullifier_tree
+        .low_leaf_proof_helper
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let new_leaf_proof = input.nullifier_tree.new_leaf_proof
+    let new_leaf_proof = input
+        .nullifier_tree
+        .new_leaf_proof
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let new_leaf_proof_helper = input.nullifier_tree.new_leaf_proof_helper
+    let new_leaf_proof_helper = input
+        .nullifier_tree
+        .new_leaf_proof_helper
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
@@ -191,7 +202,7 @@ pub fn state_trans_circuit<F: BigPrimeField>(
         &new_leaf_index,
         &new_leaf_proof,
         &new_leaf_proof_helper,
-        &is_new_leaf_largest
+        &is_new_leaf_largest,
     );
 
     // PK_ENC N
@@ -231,15 +242,9 @@ pub struct StateTransitionCircuit<F: BigPrimeField> {
 }
 
 impl<F: BigPrimeField> StateTransitionCircuit<F> {
-    pub fn new(
-        config: BaseCircuitParams,
-        stage: CircuitBuilderStage,
-        input: StateTranInput<F>
-    ) -> Self {
-        let mut inner = BaseCircuitBuilder::from_stage(stage)
-            .use_k(15)
-            .use_lookup_bits(14)
-            .use_instance_columns(1);
+    pub fn new(config: BaseCircuitParams, input: StateTranInput<F>) -> Self {
+        let mut inner = BaseCircuitBuilder::default();
+        inner.set_params(config);
 
         let range = inner.range_chip();
         let ctx = inner.main(0);
@@ -247,7 +252,8 @@ impl<F: BigPrimeField> StateTransitionCircuit<F> {
         let mut public_inputs = Vec::<AssignedValue<F>>::new();
         state_trans_circuit(ctx, &range, input.clone(), &mut public_inputs);
         inner.assigned_instances[0].extend(public_inputs);
-        inner.calculate_params(Some(10));
+        // inner.calculate_params(Some(10));
+        // println!("state transition config: {:?}", inner.params());
         Self { input, inner }
     }
 }
@@ -284,24 +290,20 @@ impl<F: BigPrimeField> CircuitExt<F> for StateTransitionCircuit<F> {
     }
 
     fn instances(&self) -> Vec<Vec<F>> {
-        vec![
-            self.inner.assigned_instances[0]
-                .iter()
-                .map(|instance| *instance.value())
-                .collect()
-        ]
+        vec![self.inner.assigned_instances[0]
+            .iter()
+            .map(|instance| *instance.value())
+            .collect()]
     }
 }
 
 #[cfg(test)]
 mod test {
     use halo2_base::{
-        halo2_proofs::halo2curves::bn256::Fr,
-        utils::testing::base_test,
-        AssignedValue,
+        halo2_proofs::halo2curves::bn256::Fr, utils::testing::base_test, AssignedValue,
     };
 
-    use super::{ state_trans_circuit, utils::generate_random_state_transition_circuit_inputs };
+    use super::{state_trans_circuit, utils::generate_random_state_transition_circuit_inputs};
 
     #[test]
     fn test_state_trans_circuit() {
