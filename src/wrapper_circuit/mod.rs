@@ -437,7 +437,14 @@ mod recursion {
 
     impl RecursionCircuit {
         const PREPROCESSED_DIGEST_ROW: usize = 4 * LIMBS;
-        const ROUND_ROW: usize = 4 * LIMBS + 1;
+        const PK_ENC_N_ROW: usize = 4 * LIMBS + 1;
+        const PK_ENC_G_ROW: usize = 4 * LIMBS + 3;
+        const VOTE_ROW: usize = 4 * LIMBS + 5;
+        const NULLIFIER_OLD_ROOT_ROW: usize = 4 * LIMBS + 25;
+        const NULLIFIER_NEW_ROOT_ROW: usize = 4 * LIMBS + 26;
+        const MEMBERSHIP_ROOT_ROW: usize = 4 * LIMBS + 27;
+        const PROPOSAL_ID_ROW: usize = 4 * LIMBS + 28;
+        const ROUND_ROW: usize = 4 * LIMBS + 29;
 
         pub fn new(
             params: &ParamsKZG<Bn256>,
@@ -498,6 +505,22 @@ mod recursion {
                     .collect_vec();
                 poseidon(&NativeLoader, &inputs)
             };
+
+            let mut current_instances = [
+                voter.instances[0][0],
+                voter.instances[0][1],
+                voter.instances[0][2],
+                voter.instances[0][3],
+            ]
+            .to_vec();
+            current_instances.extend(state_transition.instances[0][44..64].iter());
+            current_instances.extend([
+                state_transition.instances[0][68],
+                state_transition.instances[0][69],
+                voter.instances[0][28],
+                voter.instances[0][29],
+            ]);
+
             let instances = [
                 accumulator.lhs.x,
                 accumulator.lhs.y,
@@ -506,7 +529,9 @@ mod recursion {
             ]
             .into_iter()
             .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-            .chain([preprocessed_digest, Fr::from(round as u64)])
+            .chain([preprocessed_digest])
+            .chain(current_instances)
+            .chain([Fr::from(round as u64)])
             .collect();
 
             let inner = BaseCircuitBuilder::new(false).use_params(config_params);
@@ -529,17 +554,37 @@ mod recursion {
             let range = self.inner.range_chip();
             let main_gate = range.gate();
             let pool = self.inner.pool(0);
-            let [preprocessed_digest, round] = [
-                self.instances[Self::PREPROCESSED_DIGEST_ROW],
-                self.instances[Self::ROUND_ROW],
-            ]
-            .map(|instance| main_gate.assign_integer(pool, instance));
+
+            let preprocessed_digest =
+                main_gate.assign_integer(pool, self.instances[Self::PREPROCESSED_DIGEST_ROW]);
+            let pk_enc_n = self.instances[Self::PK_ENC_N_ROW..Self::PK_ENC_N_ROW + 2]
+                .iter()
+                .map(|instance| main_gate.assign_integer(pool, *instance))
+                .collect::<Vec<_>>();
+            let pk_enc_g = self.instances[Self::PK_ENC_G_ROW..Self::PK_ENC_G_ROW + 2]
+                .iter()
+                .map(|instance| main_gate.assign_integer(pool, *instance))
+                .collect::<Vec<_>>();
+            let aggr_vote = self.instances[Self::VOTE_ROW..Self::VOTE_ROW + 20]
+                .iter()
+                .map(|instance| main_gate.assign_integer(pool, *instance))
+                .collect::<Vec<_>>();
+            let nullifier_old_root =
+                main_gate.assign_integer(pool, self.instances[Self::NULLIFIER_OLD_ROOT_ROW]);
+            let nullifier_new_root =
+                main_gate.assign_integer(pool, self.instances[Self::NULLIFIER_NEW_ROOT_ROW]);
+            let membership_root =
+                main_gate.assign_integer(pool, self.instances[Self::MEMBERSHIP_ROOT_ROW]);
+            let proposal_id = main_gate.assign_integer(pool, self.instances[Self::PROPOSAL_ID_ROW]);
+            let round = main_gate.assign_integer(pool, self.instances[Self::ROUND_ROW]);
+
             let first_round = main_gate.is_zero(pool.main(), round);
             let not_first_round = main_gate.not(pool.main(), first_round);
 
             let fp_chip = FpChip::<Fr>::new(&range, BITS, LIMBS);
             let ecc_chip = BaseFieldEccChip::new(&fp_chip);
             let loader = Halo2Loader::new(ecc_chip, mem::take(self.inner.pool(0)));
+
             let (mut voter_instances, voter_accumulators) =
                 succinct_verify(&self.svk, &loader, &self.voter, None);
             let (mut state_transition_instances, state_transition_accumulators) =
@@ -598,6 +643,12 @@ mod recursion {
             ] {
                 ctx.constrain_equal(lhs, rhs);
             }
+
+            // state_transition(pk_enc) == previous(pk_enc) == voter(pk_enc)
+            for i in 0..4 {
+                ctx.constrain_equal(state_transition_instances[i], voter_instances[i]);
+            }
+
             *self.inner.pool(0) = pool;
 
             self.inner.assigned_instances[0].extend(
@@ -710,19 +761,15 @@ mod recursion {
         voter_config: BaseCircuitParams,
         state_transition_config: BaseCircuitParams,
         recursion_config: BaseCircuitParams,
-        dummy_voter_snark: Snark,
-        dummy_state_transition_snark: Snark,
     ) -> ProvingKey<G1Affine> {
         let recursion = RecursionCircuit::new(
             recursion_params,
-            // gen_dummy_snark::<VoterCircuit<Fr>>(voter_params, Some(voter_vk), voter_config),
-            // gen_dummy_snark::<StateTransitionCircuit<Fr>>(
-            //     state_transition_params,
-            //     Some(state_transition_vk),
-            //     state_transition_config,
-            // ),
-            dummy_voter_snark,
-            dummy_state_transition_snark,
+            gen_dummy_snark::<VoterCircuit<Fr>>(voter_params, Some(voter_vk), voter_config),
+            gen_dummy_snark::<StateTransitionCircuit<Fr>>(
+                state_transition_params,
+                Some(state_transition_vk),
+                state_transition_config,
+            ),
             RecursionCircuit::initial_snark(recursion_params, None, recursion_config.clone()),
             0,
             recursion_config,
@@ -802,7 +849,7 @@ mod test {
     fn test_recursion() {
         const GEN_VOTER_PK: bool = false;
         const GEN_STATE_TRANSITION_PK: bool = false;
-        const GEN_RECURSION_PK: bool = true;
+        const GEN_RECURSION_PK: bool = false;
 
         println!("Generate voter pk and snark");
         let voter_config = BaseCircuitParams {
@@ -905,8 +952,6 @@ mod test {
                 voter_config.clone(),
                 state_transition_config.clone(),
                 recursion_config.clone(),
-                voter_snark.clone(),
-                state_transition_snark.clone(),
             );
             let mut recursion_pk_bytes = Vec::new();
             recursion_pk
@@ -935,8 +980,12 @@ mod test {
             &recursion_params,
             &recursion_pk,
             recursion_config,
-            vec![voter_snark],
-            vec![state_transition_snark],
+            vec![voter_snark.clone(), voter_snark.clone(), voter_snark],
+            vec![
+                state_transition_snark.clone(),
+                state_transition_snark.clone(),
+                state_transition_snark,
+            ],
         );
         end_timer!(pf_time);
 
