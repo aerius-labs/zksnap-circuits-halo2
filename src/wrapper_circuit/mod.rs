@@ -646,8 +646,66 @@ mod recursion {
 
             // state_transition(pk_enc) == previous(pk_enc) == voter(pk_enc)
             for i in 0..4 {
-                ctx.constrain_equal(state_transition_instances[i], voter_instances[i]);
+                assert_eq!(
+                    state_transition_instances[i].value(),
+                    previous_instances[i].value()
+                );
+                ctx.constrain_equal(&state_transition_instances[i], &voter_instances[i]);
+
+                assert_eq!(
+                    state_transition_instances[i].value(),
+                    previous_instances[i].value()
+                );
+                ctx.constrain_equal(&state_transition_instances[i], &previous_instances[i]);
             }
+
+            // state_transition(prev_vote) == previous(aggr_vote)
+            for i in 0..20 {
+                assert_eq!(
+                    state_transition_instances[i + 4].value(),
+                    previous_instances[i + 4].value()
+                );
+                ctx.constrain_equal(
+                    &state_transition_instances[i + 4],
+                    &previous_instances[i + 4],
+                );
+            }
+
+            // state_transition(incoming_vote) == voter(vote)
+            for i in 0..20 {
+                assert_eq!(
+                    state_transition_instances[i + 24].value(),
+                    voter_instances[i + 4].value()
+                );
+                ctx.constrain_equal(&state_transition_instances[i + 24], &voter_instances[i + 4]);
+            }
+
+            // state_transition(nullifier) == voter(nullifier)
+            for i in 0..4 {
+                assert_eq!(
+                    state_transition_instances[i + 64].value(),
+                    voter_instances[i + 24].value()
+                );
+                ctx.constrain_equal(
+                    &state_transition_instances[i + 64],
+                    &voter_instances[i + 24],
+                );
+            }
+
+            // state_transition(nullifier_old_root) == previous(nullifier_new_root)
+            assert_eq!(
+                state_transition_instances[68].value(),
+                previous_instances[25].value()
+            );
+            ctx.constrain_equal(&state_transition_instances[68], &previous_instances[25]);
+
+            // previous(membership_root]) == voter(membership_root)
+            assert_eq!(previous_instances[26].value(), voter_instances[28].value());
+            ctx.constrain_equal(&previous_instances[26], &voter_instances[28]);
+
+            // voter(proposal_id) == previous(proposal_id)
+            assert_eq!(voter_instances[29].value(), previous_instances[27].value());
+            ctx.constrain_equal(&voter_instances[29], &previous_instances[27]);
 
             *self.inner.pool(0) = pool;
 
@@ -655,7 +713,20 @@ mod recursion {
                 [lhs.x(), lhs.y(), rhs.x(), rhs.y()]
                     .into_iter()
                     .flat_map(|coordinate| coordinate.limbs())
-                    .chain([preprocessed_digest, round].iter())
+                    .chain([preprocessed_digest].iter())
+                    .chain(pk_enc_n.iter())
+                    .chain(pk_enc_g.iter())
+                    .chain(aggr_vote.iter())
+                    .chain(
+                        [
+                            nullifier_old_root,
+                            nullifier_new_root,
+                            membership_root,
+                            proposal_id,
+                            round,
+                        ]
+                        .iter(),
+                    )
                     .copied(),
             );
 
@@ -673,7 +744,7 @@ mod recursion {
             snark.instances = vec![[g[1].x, g[1].y, g[0].x, g[0].y]
                 .into_iter()
                 .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-                .chain([Fr::zero(); 2])
+                .chain([Fr::zero(); 30])
                 .collect_vec()];
             snark
         }
@@ -733,7 +804,7 @@ mod recursion {
     impl CircuitExt<Fr> for RecursionCircuit {
         fn num_instance() -> Vec<usize> {
             // [..lhs, ..rhs, preprocessed_digest, round]
-            vec![4 * LIMBS + 2]
+            vec![4 * LIMBS + 30]
         }
 
         fn instances(&self) -> Vec<Vec<Fr>> {
