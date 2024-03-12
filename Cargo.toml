@@ -27,3 +27,4 @@ k256 = { version = "0.13.3", features = ["arithmetic", "hash2curve", "expose-fie
 elliptic-curve = "0.13.8"
 
 snark-verifier-sdk = { git = "https://github.com/aerius-labs/snark-verifier.git", branch = "feat/custom" }
+serde_json = "1.0.114"

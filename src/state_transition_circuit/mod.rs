@@ -252,8 +252,8 @@ impl<F: BigPrimeField> StateTransitionCircuit<F> {
         let mut public_inputs = Vec::<AssignedValue<F>>::new();
         state_trans_circuit(ctx, &range, input.clone(), &mut public_inputs);
         inner.assigned_instances[0].extend(public_inputs);
-        // inner.calculate_params(Some(10));
-        // println!("state transition config: {:?}", inner.params());
+        inner.calculate_params(Some(10));
+        println!("state transition config: {:?}", inner.params());
         Self { input, inner }
     }
 }
@@ -300,22 +300,43 @@ impl<F: BigPrimeField> CircuitExt<F> for StateTransitionCircuit<F> {
 #[cfg(test)]
 mod test {
     use halo2_base::{
-        halo2_proofs::halo2curves::bn256::Fr, utils::testing::base_test, AssignedValue,
+        gates::circuit::BaseCircuitParams,
+        halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr},
+        utils::testing::base_test,
+        AssignedValue,
     };
 
-    use super::{state_trans_circuit, utils::generate_random_state_transition_circuit_inputs};
+    use crate::wrapper_circuit::common::CircuitExt;
+
+    use super::{
+        state_trans_circuit, utils::generate_random_state_transition_circuit_inputs,
+        StateTransitionCircuit,
+    };
 
     #[test]
     fn test_state_trans_circuit() {
         let input = generate_random_state_transition_circuit_inputs();
 
-        base_test()
-            .k(19)
-            .lookup_bits(18)
-            .expect_satisfied(true)
-            .run(|ctx, range| {
-                let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
-                state_trans_circuit(ctx, range, input, &mut public_inputs)
-            });
+        let config = BaseCircuitParams {
+            k: 15,
+            num_advice_per_phase: vec![3],
+            num_lookup_advice_per_phase: vec![1, 0, 0],
+            num_fixed: 1,
+            lookup_bits: Some(14),
+            num_instance_columns: 1,
+        };
+
+        let circuit = StateTransitionCircuit::new(config, input.clone());
+        let prover = MockProver::run(15, &circuit, circuit.instances()).unwrap();
+        prover.verify().unwrap();
+
+        // base_test()
+        //     .k(19)
+        //     .lookup_bits(18)
+        //     .expect_satisfied(true)
+        //     .run(|ctx, range| {
+        //         let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
+        //         state_trans_circuit(ctx, range, input, &mut public_inputs)
+        //     });
     }
 }

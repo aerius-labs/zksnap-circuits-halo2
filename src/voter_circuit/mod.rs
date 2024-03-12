@@ -224,8 +224,8 @@ impl<F: BigPrimeField> VoterCircuit<F> {
         let ctx = inner.main(0);
         voter_circuit(ctx, &range, input.clone(), &mut public_inputs);
         inner.assigned_instances[0].extend(public_inputs);
-        // inner.calculate_params(Some(10));
-        // println!("voter params: {:?}", inner.params());
+        inner.calculate_params(Some(10));
+        println!("voter params: {:?}", inner.params());
         Self { input, inner }
     }
 }
@@ -278,6 +278,8 @@ mod test {
         AssignedValue,
     };
 
+    use crate::wrapper_circuit::common::CircuitExt;
+
     use super::{utils::generate_random_voter_circuit_inputs, voter_circuit, VoterCircuit};
 
     #[test]
@@ -293,20 +295,20 @@ mod test {
             num_instance_columns: 1,
         };
 
-        // let circuit = VoterCircuit::new(config, CircuitBuilderStage::Mock, input.clone());
-        // let prover = MockProver::run(15, &circuit, vec![]).unwrap();
-        // prover.verify().unwrap();
+        let circuit = VoterCircuit::new(config, input.clone());
+        let prover = MockProver::run(15, &circuit, circuit.instances()).unwrap();
+        prover.verify().unwrap();
 
-        base_test()
-            .k(15)
-            .lookup_bits(14)
-            .expect_satisfied(true)
-            .run_builder(|pool, range| {
-                let ctx = pool.main();
+        // base_test()
+        //     .k(15)
+        //     .lookup_bits(14)
+        //     .expect_satisfied(true)
+        //     .run_builder(|pool, range| {
+        //         let ctx = pool.main();
 
-                let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
+        //         let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
 
-                voter_circuit(ctx, &range, input, &mut public_inputs);
-            })
+        //         voter_circuit(ctx, &range, input, &mut public_inputs);
+        //     })
     }
 }
