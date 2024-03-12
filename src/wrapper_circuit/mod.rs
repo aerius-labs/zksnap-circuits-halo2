@@ -353,7 +353,6 @@ mod recursion {
             .collect_vec();
         let mut transcript =
             PoseidonTranscript::<Rc<Halo2Loader>, _>::new::<SECURE_MDS>(loader, snark.proof());
-        println!("instances len: {:?}", instances[0].len());
         let proof =
             PlonkSuccinctVerifier::read_proof(svk, &protocol, &instances, &mut transcript).unwrap();
         let accumulators =
@@ -1009,8 +1008,8 @@ mod test {
             &recursion_params,
             &recursion_pk,
             recursion_config,
-            vec![],
-            vec![],
+            vec![voter_snark],
+            vec![state_transition_snark],
             vec![Fr::zero(); 30],
         );
         end_timer!(pf_time);
