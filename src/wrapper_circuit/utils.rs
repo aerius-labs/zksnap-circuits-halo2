@@ -36,21 +36,10 @@ fn generate_voter_circuit_inputs(
     pk_voter: Secp256k1Affine,
     vote: Vec<Fr>,
     r_enc: Vec<BigUint>,
-    leaves: Vec<Fr>,
+    members_tree: &MerkleTree<'_, Fr, T, RATE>,
 ) -> VoterCircuitInput<Fr> {
-    let treesize = u32::pow(2, 3);
-
-    let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
-
-    let mut membership_tree =
-        MerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
-
-    let membership_root = membership_tree.get_root();
-    let (membership_proof, membership_proof_helper) = membership_tree.get_proof(0);
-    assert_eq!(
-        membership_tree.verify_proof(&leaves[0], 0, &membership_root, &membership_proof),
-        true
-    );
+    let membership_root = members_tree.get_root();
+    let (membership_proof, membership_proof_helper) = members_tree.get_proof(0);
 
     let mut vote_enc = Vec::<BigUint>::with_capacity(vote.len());
     for i in 0..vote.len() {
@@ -87,26 +76,28 @@ fn update_idx_leaf(
     new_val: Fr,
     new_val_idx: u64,
 ) -> (Vec<IMTLeaf<Fr>>, usize) {
-    let mut idx_leaves = leaves.clone();
+    let mut nullifier_tree_preimages = leaves.clone();
     let mut low_leaf_idx = 0;
     for (i, node) in leaves.iter().enumerate() {
         if node.next_val == Fr::zero() && i == 0 {
-            idx_leaves[i + 1].val = new_val;
-            idx_leaves[i].next_val = new_val;
-            idx_leaves[i].next_idx = Fr::from(i as u64 + 1);
+            nullifier_tree_preimages[i + 1].val = new_val;
+            nullifier_tree_preimages[i].next_val = new_val;
+            nullifier_tree_preimages[i].next_idx = Fr::from(i as u64 + 1);
             low_leaf_idx = i;
             break;
         }
         if node.val < new_val && (node.next_val > new_val || node.next_val == Fr::zero()) {
-            idx_leaves[new_val_idx as usize].val = new_val;
-            idx_leaves[new_val_idx as usize].next_val = idx_leaves[i].next_val;
-            idx_leaves[new_val_idx as usize].next_idx = idx_leaves[i].next_idx;
-            idx_leaves[i].next_val = new_val;
-            idx_leaves[i].next_idx = Fr::from(new_val_idx);
+            nullifier_tree_preimages[new_val_idx as usize].val = new_val;
+            nullifier_tree_preimages[new_val_idx as usize].next_val =
+                nullifier_tree_preimages[i].next_val;
+            nullifier_tree_preimages[new_val_idx as usize].next_idx =
+                nullifier_tree_preimages[i].next_idx;
+            nullifier_tree_preimages[i].next_val = new_val;
+            nullifier_tree_preimages[i].next_idx = Fr::from(new_val_idx);
             low_leaf_idx = i;
         }
     }
-    (idx_leaves, low_leaf_idx)
+    (nullifier_tree_preimages, low_leaf_idx)
 }
 
 fn generate_state_transition_circuit_inputs(
@@ -114,22 +105,12 @@ fn generate_state_transition_circuit_inputs(
     nullifier_affine: Secp256k1Affine,
     incoming_vote: Vec<BigUint>,
     prev_vote: Vec<BigUint>,
-    idx_tree_leaf: Vec<IMTLeaf<Fr>>,
+    nullifier_tree_preimages: Vec<IMTLeaf<Fr>>,
     round: u64,
-    leaves: Vec<Fr>,
+    nullifier_tree_leaves: Vec<Fr>,
 ) -> (StateTranInput<Fr>, Vec<Fr>) {
-    let tree_size = pow(2, 3);
-    let mut leaves = leaves.clone();
+    let mut leaves = nullifier_tree_leaves.clone();
     let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
-
-    for i in 0..tree_size {
-        native_hasher.update(&[
-            idx_tree_leaf[i].val,
-            idx_tree_leaf[i].next_idx,
-            idx_tree_leaf[i].next_val,
-        ]);
-        leaves.push(native_hasher.squeeze_and_reset());
-    }
 
     let nullifier_compress = compress_native_nullifier(&nullifier_affine);
     native_hasher.update(&nullifier_compress);
@@ -138,10 +119,13 @@ fn generate_state_transition_circuit_inputs(
     let mut tree =
         IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
 
+    println!("test input leaves (old_root): {:?}", leaves);
+
     let old_root = tree.get_root();
 
-    let (updated_idx_leaves, low_leaf_idx) = update_idx_leaf(idx_tree_leaf.clone(), new_val, round);
-    let low_leaf = idx_tree_leaf[low_leaf_idx].clone();
+    let (updated_idx_leaves, low_leaf_idx) =
+        update_idx_leaf(nullifier_tree_preimages.clone(), new_val, round);
+    let low_leaf = nullifier_tree_preimages[low_leaf_idx].clone();
     let (low_leaf_proof, low_leaf_proof_helper) = tree.get_proof(low_leaf_idx);
     assert_eq!(
         tree.verify_proof(
@@ -219,8 +203,12 @@ fn generate_state_transition_circuit_inputs(
 
 pub(crate) fn generate_wrapper_circuit_input(
     num_round: usize,
-) -> (VoterCircuitInput<Fr>, StateTranInput<Fr>) {
+) -> (Vec<VoterCircuitInput<Fr>>, Vec<StateTranInput<Fr>>) {
     let mut rng = thread_rng();
+    let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
+    let mut native_hasher2 = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
+
+    // Generate pk_enc
     let n = rng.gen_biguint(ENC_BIT_LEN as u64);
     let g = rng.gen_biguint(ENC_BIT_LEN as u64);
     let pk_enc = EncryptionPublicKey {
@@ -228,8 +216,7 @@ pub(crate) fn generate_wrapper_circuit_input(
         g: g.clone(),
     };
 
-    let mut leaves = Vec::<Fr>::new();
-    let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
+    let mut members_tree_leaves = Vec::<Fr>::new();
 
     let sk = (0..num_round)
         .map(|_| Fq::random(OsRng))
@@ -268,26 +255,39 @@ pub(crate) fn generate_wrapper_circuit_input(
     for (x, y) in pk_voter_x.iter().zip(pk_voter_y.clone()) {
         native_hasher.update(x.as_slice());
         native_hasher.update(y.as_slice());
-        leaves.push(native_hasher.squeeze_and_reset());
+        members_tree_leaves.push(native_hasher.squeeze_and_reset());
     }
 
     for _ in num_round..8 {
         native_hasher.update(&[Fr::ZERO]);
-        leaves.push(native_hasher.squeeze_and_reset());
+        members_tree_leaves.push(native_hasher.squeeze_and_reset());
     }
+
+    let members_tree = MerkleTree::new(&mut native_hasher, members_tree_leaves.clone()).unwrap();
 
     let mut vote = [Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()].to_vec();
     let mut prev_vote = Vec::<BigUint>::new();
 
-    let mut voter_input: VoterCircuitInput<Fr> = generate_random_voter_circuit_inputs();
-    let mut state_input: StateTranInput<Fr> = generate_random_state_transition_circuit_inputs();
-    let mut idx_node_leaves = (0..8)
+    let mut voter_inputs = Vec::<VoterCircuitInput<Fr>>::new();
+    let mut state_inputs = Vec::<StateTranInput<Fr>>::new();
+
+    let mut state_input = generate_random_state_transition_circuit_inputs();
+
+    let nullifier_tree_preimages = (0..8)
         .map(|_| IMTLeaf::<Fr> {
             val: Fr::from(0u64),
             next_val: Fr::from(0u64),
             next_idx: Fr::from(0u64),
         })
         .collect::<Vec<_>>();
+    let mut nullifier_tree_leaves = nullifier_tree_preimages
+        .iter()
+        .map(|leaf| {
+            
+            native_hasher2.update(&[leaf.val, leaf.next_val, leaf.next_idx]);
+            native_hasher2.squeeze_and_reset()
+        })
+        .collect::<Vec<Fr>>();
 
     for i in 0..num_round {
         let (nullifier, s, c) = gen_test_nullifier(&sk[i], &[1u8, 0u8]);
@@ -303,7 +303,7 @@ pub(crate) fn generate_wrapper_circuit_input(
                 .collect::<Vec<_>>();
         }
 
-        voter_input = generate_voter_circuit_inputs(
+        voter_inputs.push(generate_voter_circuit_inputs(
             pk_enc.clone(),
             nullifier,
             s,
@@ -311,8 +311,8 @@ pub(crate) fn generate_wrapper_circuit_input(
             pk_voter[i],
             vote.clone(),
             r_enc.clone(),
-            leaves.clone(),
-        );
+            &members_tree,
+        ));
 
         let mut vote_enc = Vec::<BigUint>::with_capacity(5);
         for i in 0..5 {
@@ -324,15 +324,18 @@ pub(crate) fn generate_wrapper_circuit_input(
             ));
         }
 
-        (state_input, leaves) = generate_state_transition_circuit_inputs(
+        (state_input, nullifier_tree_leaves) = generate_state_transition_circuit_inputs(
             pk_enc.clone(),
             nullifier,
             vote_enc.clone(),
             prev_vote.clone(),
-            idx_node_leaves.clone(),
-            i as u64,
-            leaves,
+            nullifier_tree_preimages.clone(),
+            (i + 1) as u64,
+            nullifier_tree_leaves,
         );
+        println!("STATE_INPUT: {:?}", state_input);
+
+        state_inputs.push(state_input);
 
         prev_vote = prev_vote
             .iter()
@@ -346,5 +349,5 @@ pub(crate) fn generate_wrapper_circuit_input(
         }
     }
 
-    (voter_input, state_input)
+    (voter_inputs, state_inputs)
 }
