@@ -13,7 +13,7 @@ use halo2_base::{
         plonk::{Circuit, ConstraintSystem, Error},
     },
     poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher},
-    utils::BigPrimeField,
+    utils::{fe_to_biguint, BigPrimeField},
     AssignedValue, Context, QuantumCell,
 };
 use halo2_ecc::{
@@ -21,6 +21,7 @@ use halo2_ecc::{
     fields::FieldChip,
     secp256k1::{sha256::Sha256Chip, FpChip, FqChip},
 };
+use itertools::Itertools;
 use num_bigint::BigUint;
 use plume_halo2::plume::{compress_point, verify_plume, PlumeInput};
 
@@ -55,6 +56,7 @@ pub struct VoterCircuitInput<F: BigPrimeField> {
     // ? This will be 2 bytes for performance, can change this
     // ? to accomodate more bytes later based on requirement.
     proposal_id: F,
+    vote_enc: Vec<BigUint>,
 
     // * Private inputs
 
@@ -68,12 +70,14 @@ pub struct VoterCircuitInput<F: BigPrimeField> {
     membership_proof: Vec<F>,
     membership_proof_helper: Vec<F>,
 }
+
 impl<F: BigPrimeField> VoterCircuitInput<F> {
     pub fn new(
         membership_root: F,
         pk_enc: EncryptionPublicKey,
         nullifier: Secp256k1Affine,
         proposal_id: F,
+        vote_enc: Vec<BigUint>,
         s_nullifier: Fq,
         vote: Vec<F>,
         r_enc: Vec<BigUint>,
@@ -87,6 +91,7 @@ impl<F: BigPrimeField> VoterCircuitInput<F> {
             pk_enc,
             nullifier,
             proposal_id,
+            vote_enc,
             s_nullifier,
             vote,
             r_enc,
@@ -140,11 +145,30 @@ pub fn voter_circuit<F: BigPrimeField>(
     let g_assigned = biguint_chip
         .assign_integer(ctx, Value::known(input.pk_enc.g.clone()), ENC_BIT_LEN)
         .unwrap();
-    let vote_assigned = input
+    let vote_assigned_fe = input
         .vote
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
+    let vote_assigned_big = input
+        .vote
+        .iter()
+        .map(fe_to_biguint)
+        .map(|x| {
+            biguint_chip
+                .assign_integer(ctx, Value::known(x), ENC_BIT_LEN * 2)
+                .unwrap()
+        })
+        .collect_vec();
+    let vote_enc_assigned_big = input
+        .vote_enc
+        .iter()
+        .map(|x| {
+            biguint_chip
+                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2)
+                .unwrap()
+        })
+        .collect_vec();
     let r_assigned = input
         .r_enc
         .iter()
@@ -161,21 +185,21 @@ pub fn voter_circuit<F: BigPrimeField>(
     };
 
     // 1. Verify if the voter is in the membership tree
-    // verify_membership_proof(
-    //     ctx,
-    //     gate,
-    //     &hasher,
-    //     &membership_root,
-    //     &leaf,
-    //     &membership_proof,
-    //     &membership_proof_helper
-    // );
+    verify_membership_proof(
+        ctx,
+        gate,
+        &hasher,
+        &membership_root,
+        &leaf,
+        &membership_proof,
+        &membership_proof_helper,
+    );
 
     // Check to verify correct votes have been passed.
-    let _ = vote_assigned.iter().map(|x| gate.assert_bit(ctx, *x));
+    let _ = vote_assigned_fe.iter().map(|x| gate.assert_bit(ctx, *x));
     let zero = ctx.load_zero();
     let one = ctx.load_constant(F::ONE);
-    let vote_sum_assigned = vote_assigned
+    let vote_sum_assigned = vote_assigned_fe
         .iter()
         .fold(zero, |zero, x| gate.add(ctx, zero, *x));
     ctx.constrain_equal(&vote_sum_assigned, &one);
@@ -187,48 +211,47 @@ pub fn voter_circuit<F: BigPrimeField>(
     public_inputs.extend(pk_enc.g.limbs().to_vec());
 
     // 2. Verify correct vote encryption
-    // for i in 0..input.vote.len() {
-    //     let _vote_enc = paillier_chip
-    //         .encrypt(ctx, &pk_enc, &vote_assigned[i], &r_assigned[i])
-    //         .unwrap();
+    for i in 0..input.vote.len() {
+        let _vote_enc = paillier_chip
+            .encrypt(ctx, &pk_enc, &vote_assigned_big[i], &r_assigned[i])
+            .unwrap();
 
-    //     //ENC_VOTE
-    //     public_inputs.append(&mut _vote_enc.limbs().to_vec());
-    // }
+        biguint_chip
+            .assert_equal_fresh(ctx, &vote_enc_assigned_big[i], &_vote_enc)
+            .unwrap();
 
-    let zero = ctx.load_zero();
-    public_inputs.extend([zero; 20]);
+        //ENC_VOTE
+        public_inputs.append(&mut vote_enc_assigned_big[i].limbs().to_vec());
+    }
 
     // 3. Verify nullifier
-    // let message = proposal_id
-    //     .value()
-    //     .to_bytes_le()[..2]
-    //     .iter()
-    //     .map(|v| ctx.load_witness(F::from(*v as u64)))
-    //     .collect::<Vec<_>>();
-    // {
-    //     let mut _proposal_id = ctx.load_zero();
-    //     for i in 0..2 {
-    //         _proposal_id = gate.mul_add(
-    //             ctx,
-    //             message[i],
-    //             QuantumCell::Constant(F::from(1u64 << (8 * i))),
-    //             _proposal_id
-    //         );
-    //     }
-    //     ctx.constrain_equal(&_proposal_id, &proposal_id);
-    // }
+    let message = proposal_id.value().to_bytes_le()[..2]
+        .iter()
+        .map(|v| ctx.load_witness(F::from(*v as u64)))
+        .collect::<Vec<_>>();
+    {
+        let mut _proposal_id = ctx.load_zero();
+        for i in 0..2 {
+            _proposal_id = gate.mul_add(
+                ctx,
+                message[i],
+                QuantumCell::Constant(F::from(1u64 << (8 * i))),
+                _proposal_id,
+            );
+        }
+        ctx.constrain_equal(&_proposal_id, &proposal_id);
+    }
 
     let compressed_nullifier = compress_nullifier(ctx, range, &nullifier);
 
-    // let plume_input = PlumeInput::new(
-    //     nullifier,
-    //     s_nullifier.clone(),
-    //     c_nullifier,
-    //     pk_voter,
-    //     message
-    // );
-    // verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
+    let plume_input = PlumeInput::new(
+        nullifier,
+        s_nullifier.clone(),
+        c_nullifier,
+        pk_voter,
+        message,
+    );
+    verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
 
     //NULLIFIER
     public_inputs.extend(compressed_nullifier.to_vec());
@@ -318,29 +341,29 @@ mod test {
     fn test_voter_circuit() {
         let input = generate_random_voter_circuit_inputs();
 
-        let config = BaseCircuitParams {
-            k: 15 as usize,
-            num_advice_per_phase: vec![8],
-            num_lookup_advice_per_phase: vec![1],
-            num_fixed: 1,
-            lookup_bits: Some(14),
-            num_instance_columns: 1,
-        };
+        // let config = BaseCircuitParams {
+        //     k: 15 as usize,
+        //     num_advice_per_phase: vec![8],
+        //     num_lookup_advice_per_phase: vec![1],
+        //     num_fixed: 1,
+        //     lookup_bits: Some(14),
+        //     num_instance_columns: 1,
+        // };
 
-        let circuit = VoterCircuit::new(config, input.clone());
-        let prover = MockProver::run(15, &circuit, circuit.instances()).unwrap();
-        prover.verify().unwrap();
+        // let circuit = VoterCircuit::new(config, input.clone());
+        // let prover = MockProver::run(15, &circuit, circuit.instances()).unwrap();
+        // prover.verify().unwrap();
 
-        // base_test()
-        //     .k(15)
-        //     .lookup_bits(14)
-        //     .expect_satisfied(true)
-        //     .run_builder(|pool, range| {
-        //         let ctx = pool.main();
+        base_test()
+            .k(15)
+            .lookup_bits(14)
+            .expect_satisfied(true)
+            .run_builder(|pool, range| {
+                let ctx = pool.main();
 
-        //         let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
+                let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
 
-        //         voter_circuit(ctx, &range, input, &mut public_inputs);
-        //     })
+                voter_circuit(ctx, &range, input, &mut public_inputs);
+            })
     }
 }

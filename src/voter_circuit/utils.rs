@@ -213,6 +213,7 @@ pub fn generate_random_voter_circuit_inputs() -> VoterCircuitInput<Fr> {
         pk_enc,
         nullifier,
         proposal_id: Fr::from(1u64),
+        vote_enc,
         s_nullifier: s,
         vote,
         r_enc,

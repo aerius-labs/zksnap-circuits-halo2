@@ -56,6 +56,12 @@ pub fn generate_random_voter_circuit_inputs(
         true
     );
 
+    let mut vote_enc = Vec::<BigUint>::with_capacity(vote.len());
+    for i in 0..vote.len() {
+        vote_enc[i] =
+            paillier_enc_native(&pk_enc.n, &pk_enc.g, &fe_to_biguint(&vote[i]), &r_enc[i]);
+    }
+
     verify_nullifier(&[1u8, 0u8], &nullifier, &pk_voter, &s, &c);
 
     let input = VoterCircuitInput::new(
@@ -63,6 +69,7 @@ pub fn generate_random_voter_circuit_inputs(
         pk_enc,
         nullifier,
         Fr::from(1u64),
+        vote_enc,
         s,
         vote,
         r_enc,
@@ -74,7 +81,6 @@ pub fn generate_random_voter_circuit_inputs(
 
     input
 }
-
 
 pub fn generate_random_state_transition_circuit_inputs(
     pk_enc: EncryptionPublicKey,
