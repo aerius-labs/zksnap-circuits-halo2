@@ -38,28 +38,10 @@ pub fn generate_random_voter_circuit_inputs(
     s: Fq,
     c: Fq,
     pk_voter: Secp256k1Affine,
+    vote: Vec<Fr>,
+    r_enc: Vec<BigUint>,
 ) -> VoterCircuitInput<Fr> {
-    let mut rng = thread_rng();
-
     let treesize = u32::pow(2, 3);
-
-    let vote = [Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()].to_vec();
-
-    let n = pk_enc.n.clone();
-    let g = pk_enc.g.clone();
-
-    let mut r_enc = Vec::<BigUint>::with_capacity(5);
-    let mut vote_enc = Vec::<BigUint>::with_capacity(5);
-
-    for i in 0..5 {
-        r_enc.push(rng.gen_biguint(ENC_BIT_LEN as u64));
-        vote_enc.push(paillier_enc_native(
-            &n,
-            &g,
-            &fe_to_biguint(&vote[i]),
-            &r_enc[i],
-        ));
-    }
 
     let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
 
@@ -123,6 +105,7 @@ pub fn generate_random_voter_circuit_inputs(
 pub fn generate_random_state_transition_circuit_inputs(
     pk_enc: EncryptionPublicKey,
     nullifier_affine: Secp256k1Affine,
+    incoming_vote: Vec<BigUint>,
 ) -> StateTranInput<Fr> {
     let tree_size = pow(2, 3);
     let mut leaves = Vec::<Fr>::new();
@@ -193,16 +176,6 @@ pub fn generate_random_state_transition_circuit_inputs(
     let n = pk_enc.n.clone();
     let g = pk_enc.g.clone();
 
-    let incoming_vote = (0..5)
-        .map(|_| {
-            paillier_enc_native(
-                &n,
-                &g,
-                &rng.gen_biguint(ENC_BIT_LEN as u64),
-                &rng.gen_biguint(ENC_BIT_LEN as u64),
-            )
-        })
-        .collect::<Vec<_>>();
     let prev_vote = (0..5)
         .map(|_| {
             paillier_enc_native(
@@ -253,11 +226,34 @@ fn generate_randown_wrapper_circuit() {
 
     let (nullifier, s, c) = gen_test_nullifier(&sk, &[1u8, 0u8]);
     verify_nullifier(&[1u8, 0u8], &nullifier, &pk_voter, &s, &c);
+    let vote = [Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()].to_vec();
 
-    let voter_input =
-        generate_random_voter_circuit_inputs(pk_enc.clone(), nullifier, s, c, pk_voter);
-
-    let state_input = generate_random_state_transition_circuit_inputs(pk_enc, nullifier);
+    let r_enc = (0..5)
+        .map(|_| rng.gen_biguint(ENC_BIT_LEN as u64))
+        .collect::<Vec<_>>();
+    let voter_input = generate_random_voter_circuit_inputs(
+        pk_enc.clone(),
+        nullifier,
+        s,
+        c,
+        pk_voter,
+        vote.clone(),
+        r_enc.clone(),
+    );
+    let mut vote_enc = Vec::<BigUint>::with_capacity(5);
+    for i in 0..5 {
+        vote_enc.push(paillier_enc_native(
+            &n,
+            &g,
+            &fe_to_biguint(&vote[i]),
+            &r_enc[i],
+        ));
+    }
+    let state_input = generate_random_state_transition_circuit_inputs(
+        pk_enc, 
+        nullifier, 
+        vote_enc
+    );
 
     // let input = VoterCircuitInput {
     //     membership_root,
@@ -265,7 +261,7 @@ fn generate_randown_wrapper_circuit() {
     //   3  nullifier,
     //     proposal_id: Fr::from(1u64),
     //   -  s_nullifier: s,
-    //   2  vote,
+    //   -  vote,
     //     r_enc,
     //   -  pk_voter,
     //   -  c_nullifier: c,
@@ -275,7 +271,7 @@ fn generate_randown_wrapper_circuit() {
 
     // let input = StateTranInput {
     //   1  pk_enc,
-    //   2  incoming_vote,
+    //   -  incoming_vote,
     //   -   prev_vote,
     //      nullifier_tree: idx_input,
     //   3  nullifier: nullifier_affine,
