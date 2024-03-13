@@ -1,5 +1,5 @@
 #![allow(clippy::type_complexity)]
-
+pub mod utils;
 use ark_std::{end_timer, start_timer};
 use common::*;
 use halo2_base::utils::fs::gen_srs;

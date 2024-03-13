@@ -4,7 +4,7 @@ use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use halo2_base::halo2_proofs::halo2curves::ff::PrimeField;
 use halo2_base::halo2_proofs::halo2curves::group::Curve;
 use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp, Fq, Secp256k1, Secp256k1Affine};
-use halo2_base::utils::ScalarField;
+use halo2_base::utils::{fe_to_biguint, ScalarField};
 use halo2_ecc::*;
 use k256::elliptic_curve::hash2curve::GroupDigest;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
@@ -140,14 +140,7 @@ pub fn generate_random_voter_circuit_inputs() -> VoterCircuitInput<Fr> {
 
     let treesize = u32::pow(2, 3);
 
-    let vote = [
-        BigUint::one(),
-        BigUint::default(),
-        BigUint::default(),
-        BigUint::default(),
-        BigUint::default(),
-    ]
-    .to_vec();
+    let vote = [Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()].to_vec();
 
     let n = rng.gen_biguint(ENC_BIT_LEN as u64);
     let g = rng.gen_biguint(ENC_BIT_LEN as u64);
@@ -157,7 +150,12 @@ pub fn generate_random_voter_circuit_inputs() -> VoterCircuitInput<Fr> {
 
     for i in 0..5 {
         r_enc.push(rng.gen_biguint(ENC_BIT_LEN as u64));
-        vote_enc.push(paillier_enc_native(&n, &g, &vote[i], &r_enc[i]));
+        vote_enc.push(paillier_enc_native(
+            &n,
+            &g,
+            &fe_to_biguint(&vote[i]),
+            &r_enc[i],
+        ));
     }
 
     let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);

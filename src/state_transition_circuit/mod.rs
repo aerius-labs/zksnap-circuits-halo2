@@ -44,6 +44,33 @@ pub struct IndexTreeInput<F: BigPrimeField> {
     new_leaf_proof_helper: Vec<F>,
     is_new_leaf_largest: F,
 }
+impl<F: BigPrimeField> IndexTreeInput<F> {
+    pub fn new(
+        old_root: F,
+        low_leaf: IMTLeaf<F>,
+        low_leaf_proof: Vec<F>,
+        low_leaf_proof_helper: Vec<F>,
+        new_root: F,
+        new_leaf: IMTLeaf<F>,
+        new_leaf_index: F,
+        new_leaf_proof: Vec<F>,
+        new_leaf_proof_helper: Vec<F>,
+        is_new_leaf_largest: F,
+    ) -> Self {
+        Self {
+            old_root,
+            low_leaf,
+            low_leaf_proof,
+            low_leaf_proof_helper,
+            new_root,
+            new_leaf,
+            new_leaf_index,
+            new_leaf_proof,
+            new_leaf_proof_helper,
+            is_new_leaf_largest,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct StateTranInput<F: BigPrimeField> {
@@ -53,7 +80,23 @@ pub struct StateTranInput<F: BigPrimeField> {
     nullifier_tree: IndexTreeInput<F>,
     nullifier: Secp256k1Affine,
 }
-
+impl<F: BigPrimeField> StateTranInput<F> {
+    pub fn new(
+        pk_enc: EncryptionPublicKey,
+        incoming_vote: Vec<BigUint>,
+        prev_vote: Vec<BigUint>,
+        nullifier_tree: IndexTreeInput<F>,
+        nullifier: Secp256k1Affine,
+    ) -> Self {
+        Self {
+            pk_enc,
+            incoming_vote,
+            prev_vote,
+            nullifier_tree,
+            nullifier,
+        }
+    }
+}
 pub fn compress_nullifier<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,

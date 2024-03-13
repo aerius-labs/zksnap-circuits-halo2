@@ -61,12 +61,41 @@ pub struct VoterCircuitInput<F: BigPrimeField> {
     // * s = r + sk * c
     s_nullifier: Fq,
 
-    vote: Vec<BigUint>,
+    vote: Vec<F>,
     r_enc: Vec<BigUint>,
     pk_voter: Secp256k1Affine,
     c_nullifier: Fq,
     membership_proof: Vec<F>,
     membership_proof_helper: Vec<F>,
+}
+impl<F: BigPrimeField> VoterCircuitInput<F> {
+    pub fn new(
+        membership_root: F,
+        pk_enc: EncryptionPublicKey,
+        nullifier: Secp256k1Affine,
+        proposal_id: F,
+        s_nullifier: Fq,
+        vote: Vec<F>,
+        r_enc: Vec<BigUint>,
+        pk_voter: Secp256k1Affine,
+        c_nullifier: Fq,
+        membership_proof: Vec<F>,
+        membership_proof_helper: Vec<F>,
+    ) -> Self {
+        Self {
+            membership_root,
+            pk_enc,
+            nullifier,
+            proposal_id,
+            s_nullifier,
+            vote,
+            r_enc,
+            pk_voter,
+            c_nullifier,
+            membership_proof,
+            membership_proof_helper,
+        }
+    }
 }
 
 pub fn voter_circuit<F: BigPrimeField>(
@@ -114,11 +143,7 @@ pub fn voter_circuit<F: BigPrimeField>(
     let vote_assigned = input
         .vote
         .iter()
-        .map(|x| {
-            biguint_chip
-                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN)
-                .unwrap()
-        })
+        .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
     let r_assigned = input
         .r_enc
@@ -146,7 +171,14 @@ pub fn voter_circuit<F: BigPrimeField>(
     //     &membership_proof_helper
     // );
 
-    // TODO: add a check to verify correct votes have been passed.
+    // Check to verify correct votes have been passed.
+    let _ = vote_assigned.iter().map(|x| gate.assert_bit(ctx, *x));
+    let zero = ctx.load_zero();
+    let one = ctx.load_constant(F::ONE);
+    let vote_sum_assigned = vote_assigned
+        .iter()
+        .fold(zero, |zero, x| gate.add(ctx, zero, *x));
+    ctx.constrain_equal(&vote_sum_assigned, &one);
 
     //PK_ENC_n
     public_inputs.extend(pk_enc.n.limbs().to_vec());
