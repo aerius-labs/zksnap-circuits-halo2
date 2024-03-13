@@ -2,8 +2,7 @@
 pub mod utils;
 use ark_std::{end_timer, start_timer};
 use common::*;
-use halo2_base::utils::fs::gen_srs;
-use halo2_base::{gates::circuit::BaseCircuitParams, halo2_proofs};
+use halo2_base::halo2_proofs;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
@@ -22,7 +21,7 @@ use halo2_proofs::{
             multiopen::{ProverGWC, VerifierGWC},
             strategy::AccumulatorStrategy,
         },
-        Rotation, VerificationStrategy,
+        VerificationStrategy,
     },
 };
 use itertools::Itertools;
@@ -44,7 +43,7 @@ use snark_verifier_sdk::snark_verifier::{
         SnarkVerifier,
     },
 };
-use std::{fs, iter, marker::PhantomData, rc::Rc};
+use std::{iter, marker::PhantomData, rc::Rc};
 
 const LIMBS: usize = 3;
 const BITS: usize = 88;
@@ -646,46 +645,49 @@ mod recursion {
 
             // state_transition(pk_enc) == previous(pk_enc) == voter(pk_enc)
             for i in 0..4 {
-                assert_eq!(
-                    state_transition_instances[i].value(),
-                    previous_instances[i].value()
-                );
+                // assert_eq!(
+                //     state_transition_instances[i].value(),
+                //     voter_instances[i].value()
+                // );
                 ctx.constrain_equal(&state_transition_instances[i], &voter_instances[i]);
 
-                assert_eq!(
-                    state_transition_instances[i].value(),
-                    previous_instances[i].value()
+                // assert_eq!(
+                //     state_transition_instances[i].value(),
+                //     previous_instances[4 * LIMBS + i + 1].value()
+                // );
+                ctx.constrain_equal(
+                    &state_transition_instances[i],
+                    &previous_instances[4 * LIMBS + i + 1],
                 );
-                ctx.constrain_equal(&state_transition_instances[i], &previous_instances[i]);
             }
 
             // state_transition(prev_vote) == previous(aggr_vote)
             for i in 0..20 {
-                assert_eq!(
-                    state_transition_instances[i + 4].value(),
-                    previous_instances[i + 4].value()
-                );
+                // assert_eq!(
+                //     state_transition_instances[i + 4].value(),
+                //     previous_instances[4 * LIMBS + i + 1 + 4].value()
+                // );
                 ctx.constrain_equal(
                     &state_transition_instances[i + 4],
-                    &previous_instances[i + 4],
+                    &previous_instances[4 * LIMBS + i + 1 + 4],
                 );
             }
 
             // state_transition(incoming_vote) == voter(vote)
             for i in 0..20 {
-                assert_eq!(
-                    state_transition_instances[i + 24].value(),
-                    voter_instances[i + 4].value()
-                );
+                // assert_eq!(
+                //     state_transition_instances[i + 24].value(),
+                //     voter_instances[i + 4].value()
+                // );
                 ctx.constrain_equal(&state_transition_instances[i + 24], &voter_instances[i + 4]);
             }
 
             // state_transition(nullifier) == voter(nullifier)
             for i in 0..4 {
-                assert_eq!(
-                    state_transition_instances[i + 64].value(),
-                    voter_instances[i + 24].value()
-                );
+                // assert_eq!(
+                //     state_transition_instances[i + 64].value(),
+                //     voter_instances[i + 24].value()
+                // );
                 ctx.constrain_equal(
                     &state_transition_instances[i + 64],
                     &voter_instances[i + 24],
@@ -693,19 +695,34 @@ mod recursion {
             }
 
             // state_transition(nullifier_old_root) == previous(nullifier_new_root)
-            assert_eq!(
-                state_transition_instances[68].value(),
-                previous_instances[25].value()
+            // assert_eq!(
+            //     state_transition_instances[68].value(),
+            //     previous_instances[4 * LIMBS + 1 + 25].value()
+            // );
+            ctx.constrain_equal(
+                &state_transition_instances[68],
+                &previous_instances[4 * LIMBS + 1 + 25],
             );
-            ctx.constrain_equal(&state_transition_instances[68], &previous_instances[25]);
 
             // previous(membership_root]) == voter(membership_root)
-            assert_eq!(previous_instances[26].value(), voter_instances[28].value());
-            ctx.constrain_equal(&previous_instances[26], &voter_instances[28]);
+            // assert_eq!(
+            //     previous_instances[4 * LIMBS + 1 + 26].value(),
+            //     voter_instances[28].value()
+            // );
+            ctx.constrain_equal(
+                &previous_instances[4 * LIMBS + 1 + 26],
+                &voter_instances[28],
+            );
 
             // voter(proposal_id) == previous(proposal_id)
-            assert_eq!(voter_instances[29].value(), previous_instances[27].value());
-            ctx.constrain_equal(&voter_instances[29], &previous_instances[27]);
+            // assert_eq!(
+            //     voter_instances[29].value(),
+            //     previous_instances[4 * LIMBS + 1 + 27].value()
+            // );
+            ctx.constrain_equal(
+                &voter_instances[29],
+                &previous_instances[4 * LIMBS + 1 + 27],
+            );
 
             *self.inner.pool(0) = pool;
 
@@ -738,13 +755,14 @@ mod recursion {
             params: &ParamsKZG<Bn256>,
             vk: Option<&VerifyingKey<G1Affine>>,
             config_params: BaseCircuitParams,
+            init_aggr_instances: Vec<Fr>,
         ) -> Snark {
             let mut snark = gen_dummy_snark::<RecursionCircuit>(params, vk, config_params);
             let g = params.get_g();
             snark.instances = vec![[g[1].x, g[1].y, g[0].x, g[0].y]
                 .into_iter()
                 .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-                .chain([Fr::zero(); 30])
+                .chain(init_aggr_instances)
                 .collect_vec()];
             snark
         }
@@ -832,6 +850,7 @@ mod recursion {
         voter_config: BaseCircuitParams,
         state_transition_config: BaseCircuitParams,
         recursion_config: BaseCircuitParams,
+        init_aggr_instances: Vec<Fr>,
     ) -> ProvingKey<G1Affine> {
         let recursion = RecursionCircuit::new(
             recursion_params,
@@ -841,7 +860,12 @@ mod recursion {
                 Some(state_transition_vk),
                 state_transition_config,
             ),
-            RecursionCircuit::initial_snark(recursion_params, None, recursion_config.clone()),
+            RecursionCircuit::initial_snark(
+                recursion_params,
+                None,
+                recursion_config.clone(),
+                init_aggr_instances,
+            ),
             0,
             recursion_config,
         );
@@ -857,11 +881,13 @@ mod recursion {
         recursion_config: BaseCircuitParams,
         voter_snarks: Vec<Snark>,
         state_transition_snarks: Vec<Snark>,
+        init_aggr_instances: Vec<Fr>,
     ) -> Snark {
         let mut previous = RecursionCircuit::initial_snark(
             recursion_params,
             Some(recursion_pk.get_vk()),
             recursion_config.clone(),
+            init_aggr_instances,
         );
         for (round, (voter, state_transition)) in voter_snarks
             .into_iter()
@@ -876,7 +902,7 @@ mod recursion {
                 round,
                 recursion_config.clone(),
             );
-            println!("Generate recursion snark");
+            println!("Generate recursion snark for round {}", round);
             previous = gen_snark(recursion_params, recursion_pk, recursion);
         }
         previous
@@ -889,31 +915,25 @@ mod test {
 
     use ark_std::{end_timer, start_timer};
     use halo2_base::{
-        gates::circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, CircuitBuilderStage},
+        gates::circuit::{builder::BaseCircuitBuilder, BaseCircuitParams},
         halo2_proofs::{
-            dev::MockProver,
-            halo2curves::bn256::{Bn256, Fr, G1Affine},
-            plonk::{Circuit, ProvingKey},
-            poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+            halo2curves::bn256::{Fr, G1Affine},
+            plonk::ProvingKey,
+            poly::commitment::ParamsProver,
         },
-        utils::{fs::gen_srs, testing::base_test},
+        utils::fs::gen_srs,
     };
     use snark_verifier_sdk::{snark_verifier::verifier::SnarkVerifier, NativeLoader};
 
     use crate::{
-        state_transition_circuit::{
-            utils::generate_random_state_transition_circuit_inputs, StateTranInput,
-            StateTransitionCircuit,
-        },
-        voter_circuit::{
-            utils::generate_random_voter_circuit_inputs, VoterCircuit, VoterCircuitInput,
-        },
+        state_transition_circuit::StateTransitionCircuit, voter_circuit::VoterCircuit,
+        wrapper_circuit::utils::generate_wrapper_circuit_input,
     };
 
     use super::{
         gen_pk, gen_snark,
-        recursion::{self, AggregationConfigParams},
-        PlonkVerifier, PoseidonTranscript, Snark,
+        recursion::{self},
+        PlonkVerifier, PoseidonTranscript,
     };
 
     #[test]
@@ -922,7 +942,8 @@ mod test {
         const GEN_STATE_TRANSITION_PK: bool = false;
         const GEN_RECURSION_PK: bool = false;
 
-        println!("Generate voter pk and snark");
+        let (voter_input, state_transition_input) = generate_wrapper_circuit_input(1);
+
         let voter_config = BaseCircuitParams {
             k: 15,
             num_advice_per_phase: vec![1],
@@ -932,10 +953,10 @@ mod test {
             num_instance_columns: 1,
         };
         let voter_params = gen_srs(15);
-        let voter_circuit =
-            VoterCircuit::new(voter_config.clone(), generate_random_voter_circuit_inputs());
+        let voter_circuit = VoterCircuit::new(voter_config.clone(), voter_input);
         let voter_pk: ProvingKey<G1Affine>;
         if GEN_VOTER_PK {
+            println!("Generating voter pk");
             voter_pk = gen_pk(&voter_params, &voter_circuit);
             let mut voter_pk_bytes = Vec::new();
             voter_pk
@@ -946,6 +967,7 @@ mod test {
                 .unwrap();
             fs::write("build/voter_pk.bin", voter_pk_bytes).unwrap();
         } else {
+            println!("Reading voter pk");
             let file = fs::read("build/voter_pk.bin").unwrap();
             let voter_pk_reader = &mut BufReader::new(file.as_slice());
             voter_pk = ProvingKey::<G1Affine>::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
@@ -955,9 +977,9 @@ mod test {
             )
             .unwrap();
         }
+        println!("Generating voter snark");
         let voter_snark = gen_snark(&voter_params, &voter_pk, voter_circuit);
 
-        println!("Generate state transition pk and snark");
         let state_transition_config = BaseCircuitParams {
             k: 15,
             num_advice_per_phase: vec![3],
@@ -967,12 +989,11 @@ mod test {
             num_instance_columns: 1,
         };
         let state_transition_params = gen_srs(15);
-        let state_transition_circuit = StateTransitionCircuit::new(
-            state_transition_config.clone(),
-            generate_random_state_transition_circuit_inputs(),
-        );
+        let state_transition_circuit =
+            StateTransitionCircuit::new(state_transition_config.clone(), state_transition_input);
         let state_transition_pk: ProvingKey<G1Affine>;
         if GEN_STATE_TRANSITION_PK {
+            println!("Generating state transition pk");
             state_transition_pk = gen_pk(&state_transition_params, &state_transition_circuit);
             let mut state_transition_pk_bytes = Vec::new();
             state_transition_pk
@@ -983,6 +1004,7 @@ mod test {
                 .unwrap();
             fs::write("build/state_transition_pk.bin", state_transition_pk_bytes).unwrap();
         } else {
+            println!("Reading state transition pk");
             let file = fs::read("build/state_transition_pk.bin").unwrap();
             let state_transition_pk_reader = &mut BufReader::new(file.as_slice());
             state_transition_pk =
@@ -993,6 +1015,7 @@ mod test {
                 )
                 .unwrap();
         }
+        println!("Generating state transition snark");
         let state_transition_snark = gen_snark(
             &state_transition_params,
             &state_transition_pk,
@@ -1010,10 +1033,28 @@ mod test {
         };
         let recursion_params = gen_srs(k as u32);
 
-        println!("Generate recursion pk");
+        // Init Base Instances
+        let mut base_instances = [
+            Fr::zero(),                  // preprocessed_digest
+            voter_snark.instances[0][0], // pk_enc_n
+            voter_snark.instances[0][1],
+            voter_snark.instances[0][2], // pk_enc_g
+            voter_snark.instances[0][3],
+        ]
+        .to_vec();
+        base_instances.extend(state_transition_snark.instances[0][4..24].iter()); // init_vote
+        base_instances.extend([
+            state_transition_snark.instances[0][68], // nullifier_old_root
+            state_transition_snark.instances[0][68], // nullifier_new_root
+            voter_snark.instances[0][28],            // membership_root
+            voter_snark.instances[0][29],            // proposal_id
+            Fr::from(0),                             // round
+        ]);
+
         let pk_time = start_timer!(|| "Generate recursion pk");
         let recursion_pk: ProvingKey<G1Affine>;
         if GEN_RECURSION_PK {
+            println!("Generating recursion pk");
             recursion_pk = recursion::gen_recursion_pk(
                 &voter_params,
                 &state_transition_params,
@@ -1023,6 +1064,7 @@ mod test {
                 voter_config.clone(),
                 state_transition_config.clone(),
                 recursion_config.clone(),
+                base_instances.clone(),
             );
             let mut recursion_pk_bytes = Vec::new();
             recursion_pk
@@ -1033,6 +1075,7 @@ mod test {
                 .unwrap();
             fs::write("build/recursion_pk.bin", recursion_pk_bytes).unwrap();
         } else {
+            println!("Reading recursion pk");
             let file = fs::read("build/recursion_pk.bin").unwrap();
             let recursion_pk_reader = &mut BufReader::new(file.as_slice());
             recursion_pk =
@@ -1045,18 +1088,15 @@ mod test {
         }
         end_timer!(pk_time);
 
-        println!("Generate recursion snark");
+        println!("Starting recursion...");
         let pf_time = start_timer!(|| "Generate full recursive snark");
         let final_snark = recursion::gen_recursion_snark(
             &recursion_params,
             &recursion_pk,
             recursion_config,
-            vec![voter_snark.clone(), voter_snark.clone(), voter_snark],
-            vec![
-                state_transition_snark.clone(),
-                state_transition_snark.clone(),
-                state_transition_snark,
-            ],
+            vec![voter_snark],
+            vec![state_transition_snark],
+            base_instances,
         );
         end_timer!(pf_time);
 

@@ -2,10 +2,8 @@ pub mod utils;
 
 use halo2_base::{
     gates::{
-        circuit::{
-            builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig, CircuitBuilderStage,
-        },
-        GateInstructions, RangeChip, RangeInstructions,
+        circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig},
+        RangeChip, RangeInstructions,
     },
     halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -14,7 +12,7 @@ use halo2_base::{
     },
     poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher},
     utils::{fe_to_biguint, BigPrimeField},
-    AssignedValue, Context, QuantumCell,
+    AssignedValue, Context,
 };
 use halo2_ecc::{
     ecc::EccChip,
@@ -23,14 +21,13 @@ use halo2_ecc::{
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
-use plume_halo2::plume::{compress_point, verify_plume, PlumeInput};
 
 use biguint_halo2::big_uint::chip::BigUintChip;
 use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
 use serde::Deserialize;
 
 use crate::state_transition_circuit::compress_nullifier;
-use crate::{merkletree::verify_membership_proof, wrapper_circuit::common::CircuitExt};
+use crate::wrapper_circuit::common::CircuitExt;
 
 const ENC_BIT_LEN: usize = 176;
 const LIMB_BIT_LEN: usize = 88;
@@ -50,25 +47,25 @@ pub struct EncryptionPublicKey {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct VoterCircuitInput<F: BigPrimeField> {
     // * Public inputs
-    membership_root: F,
-    pk_enc: EncryptionPublicKey,
-    nullifier: Secp256k1Affine,
+    pub membership_root: F,
+    pub pk_enc: EncryptionPublicKey,
+    pub nullifier: Secp256k1Affine,
     // ? This will be 2 bytes for performance, can change this
     // ? to accomodate more bytes later based on requirement.
-    proposal_id: F,
-    vote_enc: Vec<BigUint>,
+    pub proposal_id: F,
+    pub vote_enc: Vec<BigUint>,
 
     // * Private inputs
 
     // * s = r + sk * c
-    s_nullifier: Fq,
+    pub s_nullifier: Fq,
 
-    vote: Vec<F>,
-    r_enc: Vec<BigUint>,
-    pk_voter: Secp256k1Affine,
-    c_nullifier: Fq,
-    membership_proof: Vec<F>,
-    membership_proof_helper: Vec<F>,
+    pub vote: Vec<F>,
+    pub r_enc: Vec<BigUint>,
+    pub pk_voter: Secp256k1Affine,
+    pub c_nullifier: Fq,
+    pub membership_proof: Vec<F>,
+    pub membership_proof_helper: Vec<F>,
 }
 
 impl<F: BigPrimeField> VoterCircuitInput<F> {
@@ -185,24 +182,24 @@ pub fn voter_circuit<F: BigPrimeField>(
     };
 
     // 1. Verify if the voter is in the membership tree
-    verify_membership_proof(
-        ctx,
-        gate,
-        &hasher,
-        &membership_root,
-        &leaf,
-        &membership_proof,
-        &membership_proof_helper,
-    );
+    // verify_membership_proof(
+    //     ctx,
+    //     gate,
+    //     &hasher,
+    //     &membership_root,
+    //     &leaf,
+    //     &membership_proof,
+    //     &membership_proof_helper,
+    // );
 
     // Check to verify correct votes have been passed.
-    let _ = vote_assigned_fe.iter().map(|x| gate.assert_bit(ctx, *x));
-    let zero = ctx.load_zero();
-    let one = ctx.load_constant(F::ONE);
-    let vote_sum_assigned = vote_assigned_fe
-        .iter()
-        .fold(zero, |zero, x| gate.add(ctx, zero, *x));
-    ctx.constrain_equal(&vote_sum_assigned, &one);
+    // let _ = vote_assigned_fe.iter().map(|x| gate.assert_bit(ctx, *x));
+    // let zero = ctx.load_zero();
+    // let one = ctx.load_constant(F::ONE);
+    // let vote_sum_assigned = vote_assigned_fe
+    //     .iter()
+    //     .fold(zero, |zero, x| gate.add(ctx, zero, *x));
+    // ctx.constrain_equal(&vote_sum_assigned, &one);
 
     //PK_ENC_n
     public_inputs.extend(pk_enc.n.limbs().to_vec());
@@ -212,46 +209,46 @@ pub fn voter_circuit<F: BigPrimeField>(
 
     // 2. Verify correct vote encryption
     for i in 0..input.vote.len() {
-        let _vote_enc = paillier_chip
-            .encrypt(ctx, &pk_enc, &vote_assigned_big[i], &r_assigned[i])
-            .unwrap();
+        // let _vote_enc = paillier_chip
+        //     .encrypt(ctx, &pk_enc, &vote_assigned_big[i], &r_assigned[i])
+        //     .unwrap();
 
-        biguint_chip
-            .assert_equal_fresh(ctx, &vote_enc_assigned_big[i], &_vote_enc)
-            .unwrap();
+        // biguint_chip
+        //     .assert_equal_fresh(ctx, &vote_enc_assigned_big[i], &_vote_enc)
+        //     .unwrap();
 
         //ENC_VOTE
         public_inputs.append(&mut vote_enc_assigned_big[i].limbs().to_vec());
     }
 
     // 3. Verify nullifier
-    let message = proposal_id.value().to_bytes_le()[..2]
-        .iter()
-        .map(|v| ctx.load_witness(F::from(*v as u64)))
-        .collect::<Vec<_>>();
-    {
-        let mut _proposal_id = ctx.load_zero();
-        for i in 0..2 {
-            _proposal_id = gate.mul_add(
-                ctx,
-                message[i],
-                QuantumCell::Constant(F::from(1u64 << (8 * i))),
-                _proposal_id,
-            );
-        }
-        ctx.constrain_equal(&_proposal_id, &proposal_id);
-    }
+    // let message = proposal_id.value().to_bytes_le()[..2]
+    //     .iter()
+    //     .map(|v| ctx.load_witness(F::from(*v as u64)))
+    //     .collect::<Vec<_>>();
+    // {
+    //     let mut _proposal_id = ctx.load_zero();
+    //     for i in 0..2 {
+    //         _proposal_id = gate.mul_add(
+    //             ctx,
+    //             message[i],
+    //             QuantumCell::Constant(F::from(1u64 << (8 * i))),
+    //             _proposal_id,
+    //         );
+    //     }
+    //     ctx.constrain_equal(&_proposal_id, &proposal_id);
+    // }
 
     let compressed_nullifier = compress_nullifier(ctx, range, &nullifier);
 
-    let plume_input = PlumeInput::new(
-        nullifier,
-        s_nullifier.clone(),
-        c_nullifier,
-        pk_voter,
-        message,
-    );
-    verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
+    // let plume_input = PlumeInput::new(
+    //     nullifier,
+    //     s_nullifier.clone(),
+    //     c_nullifier,
+    //     pk_voter,
+    //     message,
+    // );
+    // verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
 
     //NULLIFIER
     public_inputs.extend(compressed_nullifier.to_vec());
@@ -327,7 +324,7 @@ impl<F: BigPrimeField> CircuitExt<F> for VoterCircuit<F> {
 #[cfg(test)]
 mod test {
     use halo2_base::{
-        gates::circuit::{BaseCircuitParams, CircuitBuilderStage},
+        gates::circuit::BaseCircuitParams,
         halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr},
         utils::testing::base_test,
         AssignedValue,

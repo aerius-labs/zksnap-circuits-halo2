@@ -1,7 +1,7 @@
 pub mod utils;
 
 use halo2_base::gates::circuit::builder::BaseCircuitBuilder;
-use halo2_base::gates::circuit::{BaseCircuitParams, BaseConfig, CircuitBuilderStage};
+use halo2_base::gates::circuit::{BaseCircuitParams, BaseConfig};
 use halo2_base::gates::GateInstructions;
 use halo2_base::halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
 use halo2_base::halo2_proofs::plonk::{Circuit, ConstraintSystem, Error};
@@ -74,11 +74,11 @@ impl<F: BigPrimeField> IndexTreeInput<F> {
 
 #[derive(Debug, Clone)]
 pub struct StateTranInput<F: BigPrimeField> {
-    pk_enc: EncryptionPublicKey,
-    incoming_vote: Vec<BigUint>,
-    prev_vote: Vec<BigUint>,
-    nullifier_tree: IndexTreeInput<F>,
-    nullifier: Secp256k1Affine,
+    pub pk_enc: EncryptionPublicKey,
+    pub incoming_vote: Vec<BigUint>,
+    pub prev_vote: Vec<BigUint>,
+    pub nullifier_tree: IndexTreeInput<F>,
+    pub nullifier: Secp256k1Affine,
 }
 impl<F: BigPrimeField> StateTranInput<F> {
     pub fn new(
@@ -194,9 +194,8 @@ pub fn state_trans_circuit<F: BigPrimeField>(
     let new_root = ctx.load_witness(input.nullifier_tree.new_root);
 
     let val = ctx.load_witness(input.nullifier_tree.new_leaf.val);
-    // TODO: make it working for 254 num_bits
-    // assert_eq!(val.value(), nullifier_hash.value());
-    // ctx.constrain_equal(&val, &nullifier_hash);
+    assert_eq!(val.value(), nullifier_hash.value());
+    ctx.constrain_equal(&val, &nullifier_hash);
     let next_val = ctx.load_witness(input.nullifier_tree.new_leaf.next_val);
     let next_idx = ctx.load_witness(input.nullifier_tree.new_leaf.next_idx);
 
@@ -229,8 +228,6 @@ pub fn state_trans_circuit<F: BigPrimeField>(
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-
-    // TODO: works for 252 num_bits, make it working for 254 num_bits
 
     insert_leaf::<F, 3, 2>(
         ctx,

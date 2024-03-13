@@ -1,23 +1,15 @@
-use halo2_base::halo2_proofs::arithmetic::{CurveAffine, Field};
+use halo2_base::halo2_proofs::arithmetic::Field;
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
-use halo2_base::halo2_proofs::halo2curves::ff::PrimeField;
 use halo2_base::halo2_proofs::halo2curves::group::Curve;
-use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp, Fq, Secp256k1, Secp256k1Affine};
+use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fq, Secp256k1, Secp256k1Affine};
 use halo2_base::utils::{fe_to_biguint, ScalarField};
 use halo2_ecc::*;
-use k256::elliptic_curve::hash2curve::GroupDigest;
-use k256::elliptic_curve::sec1::ToEncodedPoint;
-use k256::{
-    elliptic_curve::hash2curve::ExpandMsgXmd, sha2::Sha256 as K256Sha256,
-    Secp256k1 as K256Secp256k1,
-};
 use num_bigint::{BigUint, RandBigInt};
 use num_traits::pow;
 use paillier_chip::paillier::{paillier_add_native, paillier_enc_native};
 use pse_poseidon::Poseidon;
 use rand::rngs::OsRng;
 use rand::thread_rng;
-use sha2::{Digest, Sha256};
 
 use crate::merkletree::native::MerkleTree;
 use crate::state_transition_circuit::utils::{
@@ -36,7 +28,7 @@ const RATE: usize = 2;
 const R_F: usize = 8;
 const R_P: usize = 57;
 
-pub fn generate_voter_circuit_inputs(
+fn generate_voter_circuit_inputs(
     pk_enc: EncryptionPublicKey,
     nullifier: Secp256k1Affine,
     s: Fq,
@@ -62,8 +54,12 @@ pub fn generate_voter_circuit_inputs(
 
     let mut vote_enc = Vec::<BigUint>::with_capacity(vote.len());
     for i in 0..vote.len() {
-        vote_enc[i] =
-            paillier_enc_native(&pk_enc.n, &pk_enc.g, &fe_to_biguint(&vote[i]), &r_enc[i]);
+        vote_enc.push(paillier_enc_native(
+            &pk_enc.n,
+            &pk_enc.g,
+            &fe_to_biguint(&vote[i]),
+            &r_enc[i],
+        ))
     }
 
     verify_nullifier(&[1u8, 0u8], &nullifier, &pk_voter, &s, &c);
@@ -86,7 +82,7 @@ pub fn generate_voter_circuit_inputs(
     input
 }
 
-pub fn generate_state_transition_circuit_inputs(
+fn generate_state_transition_circuit_inputs(
     pk_enc: EncryptionPublicKey,
     nullifier_affine: Secp256k1Affine,
     incoming_vote: Vec<BigUint>,
@@ -181,7 +177,9 @@ pub fn generate_state_transition_circuit_inputs(
     input
 }
 
-fn generate_wrapper_circuit_input(no_round: usize) -> (VoterCircuitInput<Fr>, StateTranInput<Fr>) {
+pub(crate) fn generate_wrapper_circuit_input(
+    num_round: usize,
+) -> (VoterCircuitInput<Fr>, StateTranInput<Fr>) {
     let mut rng = thread_rng();
     let n = rng.gen_biguint(ENC_BIT_LEN as u64);
     let g = rng.gen_biguint(ENC_BIT_LEN as u64);
@@ -193,7 +191,9 @@ fn generate_wrapper_circuit_input(no_round: usize) -> (VoterCircuitInput<Fr>, St
     let mut leaves = Vec::<Fr>::new();
     let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
 
-    let sk = (0..no_round).map(|_| Fq::random(OsRng)).collect::<Vec<_>>();
+    let sk = (0..num_round)
+        .map(|_| Fq::random(OsRng))
+        .collect::<Vec<_>>();
     let pk_voter = sk
         .iter()
         .map(|sk| (Secp256k1::generator() * (*sk)).to_affine())
@@ -231,7 +231,7 @@ fn generate_wrapper_circuit_input(no_round: usize) -> (VoterCircuitInput<Fr>, St
         leaves.push(native_hasher.squeeze_and_reset());
     }
 
-    for _ in no_round..8 {
+    for _ in num_round..8 {
         native_hasher.update(&[Fr::ZERO]);
         leaves.push(native_hasher.squeeze_and_reset());
     }
@@ -239,10 +239,10 @@ fn generate_wrapper_circuit_input(no_round: usize) -> (VoterCircuitInput<Fr>, St
     let mut vote = [Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()].to_vec();
     let mut prev_vote = Vec::<BigUint>::new();
 
-    let mut voter_input = generate_random_voter_circuit_inputs();
-    let mut state_input = generate_random_state_transition_circuit_inputs();
+    let mut voter_input: VoterCircuitInput<Fr> = generate_random_voter_circuit_inputs();
+    let mut state_input: StateTranInput<Fr> = generate_random_state_transition_circuit_inputs();
 
-    for i in 0..no_round {
+    for i in 0..num_round {
         let (nullifier, s, c) = gen_test_nullifier(&sk[i], &[1u8, 0u8]);
         verify_nullifier(&[1u8, 0u8], &nullifier, &pk_voter[i], &s, &c);
 
@@ -252,9 +252,7 @@ fn generate_wrapper_circuit_input(no_round: usize) -> (VoterCircuitInput<Fr>, St
 
         if i == 0 {
             prev_vote = (0..5)
-                .map(|_| {
-                    paillier_enc_native(&n, &g, &rng.gen_biguint(ENC_BIT_LEN as u64), &r_enc[i])
-                })
+                .map(|_| paillier_enc_native(&n, &g, &BigUint::from(0u64), &r_enc[i]))
                 .collect::<Vec<_>>();
         }
 
@@ -268,6 +266,7 @@ fn generate_wrapper_circuit_input(no_round: usize) -> (VoterCircuitInput<Fr>, St
             r_enc.clone(),
             leaves.clone(),
         );
+
         let mut vote_enc = Vec::<BigUint>::with_capacity(5);
         for i in 0..5 {
             vote_enc.push(paillier_enc_native(
@@ -277,6 +276,7 @@ fn generate_wrapper_circuit_input(no_round: usize) -> (VoterCircuitInput<Fr>, St
                 &r_enc[i],
             ));
         }
+
         state_input = generate_state_transition_circuit_inputs(
             pk_enc.clone(),
             nullifier,
@@ -291,7 +291,7 @@ fn generate_wrapper_circuit_input(no_round: usize) -> (VoterCircuitInput<Fr>, St
             .collect::<Vec<_>>();
 
         vote[i] = Fr::zero();
-        if i != no_round {
+        if i != num_round {
             vote[i + 1] = Fr::one();
         }
     }
