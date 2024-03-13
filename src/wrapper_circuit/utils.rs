@@ -20,9 +20,13 @@ use rand::thread_rng;
 use sha2::{Digest, Sha256};
 
 use crate::merkletree::native::MerkleTree;
-use crate::state_transition_circuit::utils::compress_native_nullifier;
+use crate::state_transition_circuit::utils::{
+    compress_native_nullifier, generate_random_state_transition_circuit_inputs,
+};
 use crate::state_transition_circuit::{IndexTreeInput, StateTranInput};
-use crate::voter_circuit::utils::{gen_test_nullifier, verify_nullifier};
+use crate::voter_circuit::utils::{
+    gen_test_nullifier, generate_random_voter_circuit_inputs, verify_nullifier,
+};
 use crate::voter_circuit::{EncryptionPublicKey, VoterCircuitInput};
 use indexed_merkle_tree_halo2::utils::{IndexedMerkleTree, IndexedMerkleTreeLeaf as IMTLeaf};
 
@@ -32,7 +36,7 @@ const RATE: usize = 2;
 const R_F: usize = 8;
 const R_P: usize = 57;
 
-pub fn generate_random_voter_circuit_inputs(
+pub fn generate_voter_circuit_inputs(
     pk_enc: EncryptionPublicKey,
     nullifier: Secp256k1Affine,
     s: Fq,
@@ -82,7 +86,7 @@ pub fn generate_random_voter_circuit_inputs(
     input
 }
 
-pub fn generate_random_state_transition_circuit_inputs(
+pub fn generate_state_transition_circuit_inputs(
     pk_enc: EncryptionPublicKey,
     nullifier_affine: Secp256k1Affine,
     incoming_vote: Vec<BigUint>,
@@ -177,7 +181,7 @@ pub fn generate_random_state_transition_circuit_inputs(
     input
 }
 
-fn generate_randown_wrapper_circuit(no_round: usize) {
+fn generate_wrapper_circuit_input(no_round: usize) -> (VoterCircuitInput<Fr>, StateTranInput<Fr>) {
     let mut rng = thread_rng();
     let n = rng.gen_biguint(ENC_BIT_LEN as u64);
     let g = rng.gen_biguint(ENC_BIT_LEN as u64);
@@ -227,13 +231,16 @@ fn generate_randown_wrapper_circuit(no_round: usize) {
         leaves.push(native_hasher.squeeze_and_reset());
     }
 
-    for i in no_round..8 {
+    for _ in no_round..8 {
         native_hasher.update(&[Fr::ZERO]);
         leaves.push(native_hasher.squeeze_and_reset());
     }
 
     let mut vote = [Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()].to_vec();
     let mut prev_vote = Vec::<BigUint>::new();
+
+    let mut voter_input = generate_random_voter_circuit_inputs();
+    let mut state_input = generate_random_state_transition_circuit_inputs();
 
     for i in 0..no_round {
         let (nullifier, s, c) = gen_test_nullifier(&sk[i], &[1u8, 0u8]);
@@ -251,7 +258,7 @@ fn generate_randown_wrapper_circuit(no_round: usize) {
                 .collect::<Vec<_>>();
         }
 
-        let voter_input = generate_random_voter_circuit_inputs(
+        voter_input = generate_voter_circuit_inputs(
             pk_enc.clone(),
             nullifier,
             s,
@@ -270,7 +277,7 @@ fn generate_randown_wrapper_circuit(no_round: usize) {
                 &r_enc[i],
             ));
         }
-        let state_input = generate_random_state_transition_circuit_inputs(
+        state_input = generate_state_transition_circuit_inputs(
             pk_enc.clone(),
             nullifier,
             vote_enc.clone(),
@@ -288,37 +295,6 @@ fn generate_randown_wrapper_circuit(no_round: usize) {
             vote[i + 1] = Fr::one();
         }
     }
-    // let input = VoterCircuitInput {
-    //     membership_root,
-    //   1  pk_enc,
-    //   3  nullifier,
-    //     proposal_id: Fr::from(1u64),
-    //   -  s_nullifier: s,
-    //   -  vote,
-    //     r_enc,
-    //   -  pk_voter,
-    //   -  c_nullifier: c,
-    //     membership_proof: membership_proof.clone(),
-    //     membership_proof_helper: membership_proof_helper.clone(),
-    // };
 
-    // let input = StateTranInput {
-    //   1  pk_enc,
-    //   -  incoming_vote,
-    //   -   prev_vote,
-    //      nullifier_tree: idx_input,
-    //   3  nullifier: nullifier_affine,
-    // };
-    // let idx_input = IndexTreeInput {
-    //     old_root,
-    //     low_leaf,
-    //     low_leaf_proof,
-    //     low_leaf_proof_helper,
-    //     new_root,
-    //     new_leaf,
-    //     new_leaf_index,
-    //     new_leaf_proof,
-    //     new_leaf_proof_helper,
-    //     is_new_leaf_largest,
-    // };
+    (voter_input, state_input)
 }
