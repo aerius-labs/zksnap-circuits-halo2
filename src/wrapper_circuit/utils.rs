@@ -105,7 +105,7 @@ fn generate_state_transition_circuit_inputs(
     nullifier_tree_preimages: Vec<IMTLeaf<Fr>>,
     round: u64,
     nullifier_tree_leaves: Vec<Fr>,
-) -> (StateTranInput<Fr>, Vec<Fr>) {
+) -> (StateTranInput<Fr>, Vec<Fr>, Vec<IMTLeaf<Fr>>) {
     let mut leaves = nullifier_tree_leaves.clone();
     let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
 
@@ -194,7 +194,7 @@ fn generate_state_transition_circuit_inputs(
         nullifier_affine,
     );
 
-    (input, leaves)
+    (input, leaves, updated_idx_leaves)
 }
 
 pub(crate) fn generate_wrapper_circuit_input(
@@ -269,7 +269,7 @@ pub(crate) fn generate_wrapper_circuit_input(
 
     let mut state_input = generate_random_state_transition_circuit_inputs();
 
-    let nullifier_tree_preimages = (0..8)
+    let mut nullifier_tree_preimages = (0..8)
         .map(|_| IMTLeaf::<Fr> {
             val: Fr::from(0u64),
             next_val: Fr::from(0u64),
@@ -319,16 +319,16 @@ pub(crate) fn generate_wrapper_circuit_input(
             ));
         }
 
-        (state_input, nullifier_tree_leaves) = generate_state_transition_circuit_inputs(
-            pk_enc.clone(),
-            nullifier,
-            vote_enc.clone(),
-            prev_vote.clone(),
-            nullifier_tree_preimages.clone(),
-            (i + 1) as u64,
-            nullifier_tree_leaves,
-        );
-        println!("STATE_INPUT: {:?}", state_input);
+        (state_input, nullifier_tree_leaves, nullifier_tree_preimages) =
+            generate_state_transition_circuit_inputs(
+                pk_enc.clone(),
+                nullifier,
+                vote_enc.clone(),
+                prev_vote.clone(),
+                nullifier_tree_preimages.clone(),
+                (i + 1) as u64,
+                nullifier_tree_leaves,
+            );
 
         state_inputs.push(state_input);
 

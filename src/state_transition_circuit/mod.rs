@@ -351,7 +351,7 @@ impl<F: BigPrimeField> CircuitExt<F> for StateTransitionCircuit<F> {
 mod test {
     use halo2_base::{gates::circuit::BaseCircuitParams, halo2_proofs::dev::MockProver};
 
-    use crate::wrapper_circuit::common::CircuitExt;
+    use crate::wrapper_circuit::{common::CircuitExt, utils::generate_wrapper_circuit_input};
 
     use super::{
         state_trans_circuit, utils::generate_random_state_transition_circuit_inputs,
@@ -361,6 +361,7 @@ mod test {
     #[test]
     fn test_state_trans_circuit() {
         let input = generate_random_state_transition_circuit_inputs();
+        let (_, multiple_input) = generate_wrapper_circuit_input(3);
 
         let config = BaseCircuitParams {
             k: 15,
@@ -371,9 +372,14 @@ mod test {
             num_instance_columns: 1,
         };
 
-        let circuit = StateTransitionCircuit::new(config, input.clone());
-        let prover = MockProver::run(15, &circuit, circuit.instances()).unwrap();
-        prover.verify().unwrap();
+        for input in multiple_input {
+            println!("------round--------");
+
+            // println!("state input")
+            let circuit = StateTransitionCircuit::new(config.clone(), input.clone());
+            let prover = MockProver::run(15, &circuit, circuit.instances()).unwrap();
+            prover.verify().unwrap();
+        }
 
         // base_test()
         //     .k(19)
