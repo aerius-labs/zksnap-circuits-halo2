@@ -1026,120 +1026,120 @@ mod test {
             state_transition_circuit,
         );
 
-            let k = 22;
-            let recursion_config = BaseCircuitParams {
-                k,
-                num_advice_per_phase: vec![4],
-                num_lookup_advice_per_phase: vec![1, 0, 0],
-                num_fixed: 1,
-                lookup_bits: Some(k - 1),
-                num_instance_columns: 1,
-            };
-            let recursion_params = gen_srs(k as u32);
+        let k = 22;
+        let recursion_config = BaseCircuitParams {
+            k,
+            num_advice_per_phase: vec![4],
+            num_lookup_advice_per_phase: vec![1, 0, 0],
+            num_fixed: 1,
+            lookup_bits: Some(k - 1),
+            num_instance_columns: 1,
+        };
+        let recursion_params = gen_srs(k as u32);
 
-            // Init Base Instances
-            let mut base_instances = [
-                Fr::zero(),                  // preprocessed_digest
-                voter_snark.instances[0][0], // pk_enc_n
-                voter_snark.instances[0][1],
-                voter_snark.instances[0][2], // pk_enc_g
-                voter_snark.instances[0][3],
-            ]
-            .to_vec();
-            base_instances.extend(state_transition_snark.instances[0][4..24].iter()); // init_vote
-            base_instances.extend([
-                state_transition_snark.instances[0][68], // nullifier_old_root
-                state_transition_snark.instances[0][68], // nullifier_new_root
-                voter_snark.instances[0][28],            // membership_root
-                voter_snark.instances[0][29],            // proposal_id
-                Fr::from(0),                             // round
-            ]);
+        // Init Base Instances
+        let mut base_instances = [
+            Fr::zero(),                  // preprocessed_digest
+            voter_snark.instances[0][0], // pk_enc_n
+            voter_snark.instances[0][1],
+            voter_snark.instances[0][2], // pk_enc_g
+            voter_snark.instances[0][3],
+        ]
+        .to_vec();
+        base_instances.extend(state_transition_snark.instances[0][4..24].iter()); // init_vote
+        base_instances.extend([
+            state_transition_snark.instances[0][68], // nullifier_old_root
+            state_transition_snark.instances[0][68], // nullifier_new_root
+            voter_snark.instances[0][28],            // membership_root
+            voter_snark.instances[0][29],            // proposal_id
+            Fr::from(0),                             // round
+        ]);
 
-            let pk_time = start_timer!(|| "Generate recursion pk");
-            let recursion_pk: ProvingKey<G1Affine>;
-            if GEN_RECURSION_PK {
-                println!("Generating recursion pk");
-                recursion_pk = recursion::gen_recursion_pk(
-                    &voter_params,
-                    &state_transition_params,
-                    &recursion_params,
-                    voter_pk.get_vk(),
-                    state_transition_pk.get_vk(),
-                    voter_config.clone(),
-                    state_transition_config.clone(),
-                    recursion_config.clone(),
-                    base_instances.clone(),
-                );
-                let mut recursion_pk_bytes = Vec::new();
-                recursion_pk
-                    .write(
-                        &mut recursion_pk_bytes,
-                        halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
-                    )
-                    .unwrap();
-                fs::write("build/recursion_pk.bin", recursion_pk_bytes).unwrap();
-            } else {
-                println!("Reading recursion pk");
-                let file = fs::read("build/recursion_pk.bin").unwrap();
-                let recursion_pk_reader = &mut BufReader::new(file.as_slice());
-                recursion_pk =
-                    ProvingKey::<G1Affine>::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
-                        recursion_pk_reader,
-                        halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
-                        recursion_config.clone(),
-                    )
-                    .unwrap();
-            }
-            end_timer!(pk_time);
-
-            let mut voter_snarks = vec![voter_snark];
-            let mut state_transition_snarks = vec![state_transition_snark];
-
-            for i in 1..num_round {
-                let voter_circuit = VoterCircuit::new(voter_config.clone(), voter_input[i].clone());
-                voter_snarks.push(gen_snark(&voter_params, &voter_pk, voter_circuit));
-
-                let state_transition_circuit = StateTransitionCircuit::new(
-                    state_transition_config.clone(),
-                    state_transition_input[i].clone(),
-                );
-                state_transition_snarks.push(gen_snark(
-                    &state_transition_params,
-                    &state_transition_pk,
-                    state_transition_circuit,
-                ));
-            }
-
-            println!("Starting recursion...");
-            let pf_time = start_timer!(|| "Generate full recursive snark");
-            let final_snark = recursion::gen_recursion_snark(
+        let pk_time = start_timer!(|| "Generate recursion pk");
+        let recursion_pk: ProvingKey<G1Affine>;
+        if GEN_RECURSION_PK {
+            println!("Generating recursion pk");
+            recursion_pk = recursion::gen_recursion_pk(
+                &voter_params,
+                &state_transition_params,
                 &recursion_params,
-                &recursion_pk,
-                recursion_config,
-                voter_snarks,
-                state_transition_snarks,
-                base_instances,
+                voter_pk.get_vk(),
+                state_transition_pk.get_vk(),
+                voter_config.clone(),
+                state_transition_config.clone(),
+                recursion_config.clone(),
+                base_instances.clone(),
             );
-            end_timer!(pf_time);
-
-            {
-                let dk = (
-                    recursion_params.get_g()[0],
-                    recursion_params.g2(),
-                    recursion_params.s_g2(),
-                )
-                    .into();
-                let mut transcript =
-                    PoseidonTranscript::<NativeLoader, _>::new::<0>(final_snark.proof.as_slice());
-                let proof = PlonkVerifier::read_proof(
-                    &dk,
-                    &final_snark.protocol,
-                    &final_snark.instances,
-                    &mut transcript,
+            let mut recursion_pk_bytes = Vec::new();
+            recursion_pk
+                .write(
+                    &mut recursion_pk_bytes,
+                    halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
                 )
                 .unwrap();
-                PlonkVerifier::verify(&dk, &final_snark.protocol, &final_snark.instances, &proof)
-                    .unwrap();
-            }
+            fs::write("build/recursion_pk.bin", recursion_pk_bytes).unwrap();
+        } else {
+            println!("Reading recursion pk");
+            let file = fs::read("build/recursion_pk.bin").unwrap();
+            let recursion_pk_reader = &mut BufReader::new(file.as_slice());
+            recursion_pk =
+                ProvingKey::<G1Affine>::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
+                    recursion_pk_reader,
+                    halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
+                    recursion_config.clone(),
+                )
+                .unwrap();
+        }
+        end_timer!(pk_time);
+
+        let mut voter_snarks = vec![voter_snark];
+        let mut state_transition_snarks = vec![state_transition_snark];
+
+        for i in 1..num_round {
+            let voter_circuit = VoterCircuit::new(voter_config.clone(), voter_input[i].clone());
+            voter_snarks.push(gen_snark(&voter_params, &voter_pk, voter_circuit));
+
+            let state_transition_circuit = StateTransitionCircuit::new(
+                state_transition_config.clone(),
+                state_transition_input[i].clone(),
+            );
+            state_transition_snarks.push(gen_snark(
+                &state_transition_params,
+                &state_transition_pk,
+                state_transition_circuit,
+            ));
+        }
+
+        println!("Starting recursion...");
+        let pf_time = start_timer!(|| "Generate full recursive snark");
+        let final_snark = recursion::gen_recursion_snark(
+            &recursion_params,
+            &recursion_pk,
+            recursion_config,
+            voter_snarks,
+            state_transition_snarks,
+            base_instances,
+        );
+        end_timer!(pf_time);
+
+        {
+            let dk = (
+                recursion_params.get_g()[0],
+                recursion_params.g2(),
+                recursion_params.s_g2(),
+            )
+                .into();
+            let mut transcript =
+                PoseidonTranscript::<NativeLoader, _>::new::<0>(final_snark.proof.as_slice());
+            let proof = PlonkVerifier::read_proof(
+                &dk,
+                &final_snark.protocol,
+                &final_snark.instances,
+                &mut transcript,
+            )
+            .unwrap();
+            PlonkVerifier::verify(&dk, &final_snark.protocol, &final_snark.instances, &proof)
+                .unwrap();
+        }
     }
 }

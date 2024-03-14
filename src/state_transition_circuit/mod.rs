@@ -37,6 +37,7 @@ pub struct IndexTreeInput<F: BigPrimeField> {
     low_leaf: IMTLeaf<F>,
     low_leaf_proof: Vec<F>,
     low_leaf_proof_helper: Vec<F>,
+    new_low_leaf_proof: Vec<F>,
     new_root: F,
     new_leaf: IMTLeaf<F>,
     new_leaf_index: F,
@@ -50,6 +51,7 @@ impl<F: BigPrimeField> IndexTreeInput<F> {
         low_leaf: IMTLeaf<F>,
         low_leaf_proof: Vec<F>,
         low_leaf_proof_helper: Vec<F>,
+        new_low_leaf_proof: Vec<F>,
         new_root: F,
         new_leaf: IMTLeaf<F>,
         new_leaf_index: F,
@@ -62,6 +64,7 @@ impl<F: BigPrimeField> IndexTreeInput<F> {
             low_leaf,
             low_leaf_proof,
             low_leaf_proof_helper,
+            new_low_leaf_proof,
             new_root,
             new_leaf,
             new_leaf_index,
@@ -228,6 +231,12 @@ pub fn state_trans_circuit<F: BigPrimeField>(
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
+    let new_low_leaf_proof = input
+        .nullifier_tree
+        .new_low_leaf_proof
+        .iter()
+        .map(|x| ctx.load_witness(*x))
+        .collect::<Vec<_>>();
 
     insert_leaf::<F, 3, 2>(
         ctx,
@@ -237,6 +246,7 @@ pub fn state_trans_circuit<F: BigPrimeField>(
         &low_leaf,
         &low_leaf_proof,
         &low_leaf_proof_helper,
+        &new_low_leaf_proof,
         &new_root,
         &new_leaf,
         &new_leaf_index,
@@ -339,12 +349,7 @@ impl<F: BigPrimeField> CircuitExt<F> for StateTransitionCircuit<F> {
 
 #[cfg(test)]
 mod test {
-    use halo2_base::{
-        gates::circuit::BaseCircuitParams,
-        halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr},
-        utils::testing::base_test,
-        AssignedValue,
-    };
+    use halo2_base::{gates::circuit::BaseCircuitParams, halo2_proofs::dev::MockProver};
 
     use crate::wrapper_circuit::common::CircuitExt;
 

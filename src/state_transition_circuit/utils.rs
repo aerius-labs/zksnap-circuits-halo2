@@ -45,21 +45,21 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTranInput<Fr> {
     let tree_size = pow(2, 3);
     let mut leaves = Vec::<Fr>::new();
 
+    let sk = Fp::random(OsRng);
+    let nullifier_affine = Secp256k1Affine::from(Secp256k1Affine::generator() * sk);
+
     let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
 
     // Filling leaves with dfault values.
-    for i in 0..tree_size {
-        if i == 0 {
-            native_hasher.update(&[Fr::from(0u64), Fr::from(0u64), Fr::from(0u64)]);
-            leaves.push(native_hasher.squeeze_and_reset());
-        } else {
-            leaves.push(Fr::from(0u64));
-        }
+    for _ in 0..tree_size {
+        native_hasher.update(&[Fr::from(0u64), Fr::from(0u64), Fr::from(0u64)]);
+        leaves.push(native_hasher.squeeze_and_reset());
     }
+    let nullifier_compress = compress_native_nullifier(&nullifier_affine);
+    native_hasher.update(&nullifier_compress);
+    let new_val = native_hasher.squeeze_and_reset();
     let mut tree =
         IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
-
-    let new_val = Fr::from(69u64);
 
     let old_root = tree.get_root();
     let low_leaf = IMTLeaf::<Fr> {
@@ -85,16 +85,18 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTranInput<Fr> {
         new_low_leaf.next_idx,
     ]);
     leaves[0] = native_hasher.squeeze_and_reset();
+
+    native_hasher.update(&[new_val, Fr::from(0u64), Fr::from(0u64)]);
+    leaves[1] = native_hasher.squeeze_and_reset();
+
     tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+
+    let (new_low_leaf_proof, _) = tree.get_proof(0);
     let (new_leaf_proof, new_leaf_proof_helper) = tree.get_proof(1);
     assert_eq!(
         tree.verify_proof(&leaves[1], 1, &tree.get_root(), &new_leaf_proof),
         true
     );
-
-    native_hasher.update(&[new_val, Fr::from(0u64), Fr::from(0u64)]);
-    leaves[1] = native_hasher.squeeze_and_reset();
-    tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
 
     let new_root = tree.get_root();
     let new_leaf = IMTLeaf::<Fr> {
@@ -110,6 +112,7 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTranInput<Fr> {
         low_leaf,
         low_leaf_proof,
         low_leaf_proof_helper,
+        new_low_leaf_proof,
         new_root,
         new_leaf,
         new_leaf_index,
@@ -117,9 +120,6 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTranInput<Fr> {
         new_leaf_proof_helper,
         is_new_leaf_largest,
     };
-
-    let sk = Fp::random(OsRng);
-    let nullifier_affine = Secp256k1Affine::from(Secp256k1Affine::generator() * sk);
 
     let mut rng = thread_rng();
 

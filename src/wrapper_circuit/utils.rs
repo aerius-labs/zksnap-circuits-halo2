@@ -5,7 +5,6 @@ use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fq, Secp256k1, Secp256k1A
 use halo2_base::utils::{fe_to_biguint, ScalarField};
 use halo2_ecc::*;
 use num_bigint::{BigUint, RandBigInt};
-use num_traits::pow;
 use paillier_chip::paillier::{paillier_add_native, paillier_enc_native};
 use pse_poseidon::Poseidon;
 use rand::rngs::OsRng;
@@ -16,9 +15,7 @@ use crate::state_transition_circuit::utils::{
     compress_native_nullifier, generate_random_state_transition_circuit_inputs,
 };
 use crate::state_transition_circuit::{IndexTreeInput, StateTranInput};
-use crate::voter_circuit::utils::{
-    gen_test_nullifier, generate_random_voter_circuit_inputs, verify_nullifier,
-};
+use crate::voter_circuit::utils::{gen_test_nullifier, verify_nullifier};
 use crate::voter_circuit::{EncryptionPublicKey, VoterCircuitInput};
 use indexed_merkle_tree_halo2::utils::{IndexedMerkleTree, IndexedMerkleTreeLeaf as IMTLeaf};
 
@@ -119,8 +116,6 @@ fn generate_state_transition_circuit_inputs(
     let mut tree =
         IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
 
-    println!("test input leaves (old_root): {:?}", leaves);
-
     let old_root = tree.get_root();
 
     let (updated_idx_leaves, low_leaf_idx) =
@@ -138,13 +133,21 @@ fn generate_state_transition_circuit_inputs(
     );
 
     let new_low_leaf = updated_idx_leaves[low_leaf_idx].clone();
-    native_hasher.update(&[
+    let mut new_native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
+    new_native_hasher.update(&[
         new_low_leaf.val,
         new_low_leaf.next_val,
         new_low_leaf.next_idx,
     ]);
-    leaves[low_leaf_idx] = native_hasher.squeeze_and_reset();
-    tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+    leaves[low_leaf_idx] = new_native_hasher.squeeze_and_reset();
+    new_native_hasher.update(&[
+        updated_idx_leaves[round as usize].val,
+        updated_idx_leaves[round as usize].next_idx,
+        updated_idx_leaves[round as usize].next_val,
+    ]);
+    leaves[round as usize] = new_native_hasher.squeeze_and_reset();
+    let (new_low_leaf_proof, _) = tree.get_proof(low_leaf_idx);
+    tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut new_native_hasher, leaves.clone()).unwrap();
     let (new_leaf_proof, new_leaf_proof_helper) = tree.get_proof(round as usize);
     assert_eq!(
         tree.verify_proof(
@@ -155,14 +158,6 @@ fn generate_state_transition_circuit_inputs(
         ),
         true
     );
-
-    native_hasher.update(&[
-        updated_idx_leaves[round as usize].val,
-        updated_idx_leaves[round as usize].next_idx,
-        updated_idx_leaves[round as usize].next_val,
-    ]);
-    leaves[round as usize] = native_hasher.squeeze_and_reset();
-    tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
 
     let new_root = tree.get_root();
     let new_leaf = IMTLeaf::<Fr> {
@@ -182,6 +177,7 @@ fn generate_state_transition_circuit_inputs(
         low_leaf,
         low_leaf_proof,
         low_leaf_proof_helper,
+        new_low_leaf_proof,
         new_root,
         new_leaf,
         new_leaf_index,
@@ -283,7 +279,6 @@ pub(crate) fn generate_wrapper_circuit_input(
     let mut nullifier_tree_leaves = nullifier_tree_preimages
         .iter()
         .map(|leaf| {
-            
             native_hasher2.update(&[leaf.val, leaf.next_val, leaf.next_idx]);
             native_hasher2.squeeze_and_reset()
         })
