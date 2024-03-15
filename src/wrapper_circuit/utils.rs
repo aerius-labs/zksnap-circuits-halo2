@@ -36,9 +36,10 @@ fn generate_voter_circuit_inputs(
     vote: Vec<Fr>,
     r_enc: Vec<BigUint>,
     members_tree: &MerkleTree<'_, Fr, T, RATE>,
+    round: usize,
 ) -> VoterCircuitInput<Fr> {
     let membership_root = members_tree.get_root();
-    let (membership_proof, membership_proof_helper) = members_tree.get_proof(0);
+    let (membership_proof, membership_proof_helper) = members_tree.get_proof(round);
 
     let mut vote_enc = Vec::<BigUint>::with_capacity(vote.len());
     for i in 0..vote.len() {
@@ -312,6 +313,7 @@ pub(crate) fn generate_wrapper_circuit_input(
             vote.clone(),
             r_enc.clone(),
             &members_tree,
+            i,
         ));
 
         let mut vote_enc = Vec::<BigUint>::with_capacity(5);
