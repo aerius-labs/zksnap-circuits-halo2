@@ -201,7 +201,7 @@ fn generate_state_transition_circuit_inputs(
     (input, leaves, updated_idx_leaves)
 }
 
-pub(crate) fn generate_wrapper_circuit_input(
+pub fn generate_wrapper_circuit_input(
     num_round: usize,
 ) -> (Vec<VoterCircuitInput<Fr>>, Vec<StateTranInput<Fr>>) {
     let mut rng = thread_rng();
@@ -348,6 +348,7 @@ pub(crate) fn generate_wrapper_circuit_input(
 
     (voter_inputs, state_inputs)
 }
+
 fn print_nullifier_leafs(node: Vec<IMTLeaf<Fr>>) {
     for (i, x) in node.iter().enumerate() {
         println!("val[{}]={:?}", i, x.val);

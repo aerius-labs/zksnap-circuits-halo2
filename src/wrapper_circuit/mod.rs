@@ -291,12 +291,14 @@ pub mod common {
     }
 }
 
-mod recursion {
+pub mod recursion {
     use std::mem;
 
     use halo2_base::{
         gates::{
-            circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig},
+            circuit::{
+                builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig, CircuitBuilderStage,
+            },
             GateInstructions, RangeInstructions,
         },
         AssignedValue,
@@ -446,6 +448,7 @@ mod recursion {
         const ROUND_ROW: usize = 4 * LIMBS + 29;
 
         pub fn new(
+            stage: CircuitBuilderStage,
             params: &ParamsKZG<Bn256>,
             voter: Snark,
             state_transition: Snark,
@@ -533,7 +536,7 @@ mod recursion {
             .chain([Fr::from(round as u64)])
             .collect();
 
-            let inner = BaseCircuitBuilder::new(false).use_params(config_params);
+            let inner = BaseCircuitBuilder::from_stage(stage).use_params(config_params);
             let mut circuit = Self {
                 svk,
                 default_accumulator,
@@ -751,7 +754,7 @@ mod recursion {
             println!("recursion params: {:?}", self.inner.params());
         }
 
-        fn initial_snark(
+        pub fn initial_snark(
             params: &ParamsKZG<Bn256>,
             vk: Option<&VerifyingKey<G1Affine>>,
             config_params: BaseCircuitParams,
@@ -783,6 +786,10 @@ mod recursion {
                     loader.ec_point_from_assigned(assigned)
                 });
             Ok(KzgAccumulator::new(lhs, rhs))
+        }
+
+        pub fn inner(&self) -> &BaseCircuitBuilder<Fr> {
+            &self.inner
         }
     }
 
@@ -853,6 +860,7 @@ mod recursion {
         init_aggr_instances: Vec<Fr>,
     ) -> ProvingKey<G1Affine> {
         let recursion = RecursionCircuit::new(
+            CircuitBuilderStage::Keygen,
             recursion_params,
             gen_dummy_snark::<VoterCircuit<Fr>>(voter_params, Some(voter_vk), voter_config),
             gen_dummy_snark::<StateTransitionCircuit<Fr>>(
@@ -876,6 +884,7 @@ mod recursion {
     }
 
     pub fn gen_recursion_snark(
+        stage: CircuitBuilderStage,
         recursion_params: &ParamsKZG<Bn256>,
         recursion_pk: &ProvingKey<G1Affine>,
         recursion_config: BaseCircuitParams,
@@ -895,6 +904,7 @@ mod recursion {
             .enumerate()
         {
             let recursion = RecursionCircuit::new(
+                stage,
                 recursion_params,
                 voter,
                 state_transition,
@@ -915,7 +925,7 @@ mod test {
 
     use ark_std::{end_timer, start_timer};
     use halo2_base::{
-        gates::circuit::{builder::BaseCircuitBuilder, BaseCircuitParams},
+        gates::circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, CircuitBuilderStage},
         halo2_proofs::{
             halo2curves::bn256::{Fr, G1Affine},
             plonk::ProvingKey,
@@ -1113,6 +1123,7 @@ mod test {
         println!("Starting recursion...");
         let pf_time = start_timer!(|| "Generate full recursive snark");
         let final_snark = recursion::gen_recursion_snark(
+            CircuitBuilderStage::Mock,
             &recursion_params,
             &recursion_pk,
             recursion_config,

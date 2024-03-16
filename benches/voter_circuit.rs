@@ -1,20 +1,24 @@
-use ark_std::{ end_timer, start_timer };
+use ark_std::{end_timer, start_timer};
 use halo2_base::gates::circuit::BaseCircuitParams;
+use halo2_base::gates::circuit::{builder::RangeCircuitBuilder, CircuitBuilderStage};
 use halo2_base::gates::flex_gate::MultiPhaseThreadBreakPoints;
-use halo2_base::gates::circuit::{ builder::RangeCircuitBuilder, CircuitBuilderStage };
 use halo2_base::AssignedValue;
 use halo2_base::{
-    halo2_proofs::{ halo2curves::bn256::{ Bn256, Fr }, plonk::*, poly::kzg::commitment::ParamsKZG },
+    halo2_proofs::{
+        halo2curves::bn256::{Bn256, Fr},
+        plonk::*,
+        poly::kzg::commitment::ParamsKZG,
+    },
     utils::testing::gen_proof,
 };
 use rand::rngs::OsRng;
 
-use criterion::{ criterion_group, criterion_main };
-use criterion::{ BenchmarkId, Criterion };
+use criterion::{criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion};
 
-use pprof::criterion::{ Output, PProfProfiler };
+use pprof::criterion::{Output, PProfProfiler};
 use zksnap_halo2::voter_circuit::utils::generate_random_voter_circuit_inputs;
-use zksnap_halo2::voter_circuit::{ voter_circuit, VoterCircuitInput };
+use zksnap_halo2::voter_circuit::{voter_circuit, VoterCircuitInput};
 // Thanks to the example provided by @jebbow in his article
 // https://www.jibbow.com/posts/criterion-flamegraphs/
 
@@ -24,7 +28,7 @@ fn voter_circuit_bench(
     stage: CircuitBuilderStage,
     input: VoterCircuitInput<Fr>,
     config_params: Option<BaseCircuitParams>,
-    break_points: Option<MultiPhaseThreadBreakPoints>
+    break_points: Option<MultiPhaseThreadBreakPoints>,
 ) -> RangeCircuitBuilder<Fr> {
     let k = K as usize;
     let lookup_bits = k - 1;
@@ -32,7 +36,9 @@ fn voter_circuit_bench(
         CircuitBuilderStage::Prover => {
             RangeCircuitBuilder::prover(config_params.unwrap(), break_points.unwrap())
         }
-        _ => RangeCircuitBuilder::from_stage(stage).use_k(k).use_lookup_bits(lookup_bits),
+        _ => RangeCircuitBuilder::from_stage(stage)
+            .use_k(k)
+            .use_lookup_bits(lookup_bits),
     };
 
     let start0 = start_timer!(|| format!("Witness generation for circuit in {stage:?} stage"));
@@ -70,12 +76,12 @@ fn bench(c: &mut Criterion) {
                     CircuitBuilderStage::Prover,
                     input.clone(),
                     Some(config_params.clone()),
-                    Some(break_points.clone())
+                    Some(break_points.clone()),
                 );
 
                 gen_proof(params, pk, circuit);
             })
-        }
+        },
     );
     group.finish()
 }

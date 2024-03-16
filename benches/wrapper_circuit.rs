@@ -1,81 +1,145 @@
-use ark_std::{ end_timer, start_timer };
 use halo2_base::gates::circuit::BaseCircuitParams;
-use halo2_base::gates::flex_gate::MultiPhaseThreadBreakPoints;
-use halo2_base::gates::circuit::{ builder::RangeCircuitBuilder, CircuitBuilderStage };
-use halo2_base::AssignedValue;
+use halo2_base::gates::circuit::CircuitBuilderStage;
+use halo2_base::utils::fs::gen_srs;
 use halo2_base::{
-    halo2_proofs::{ halo2curves::bn256::{ Bn256, Fr }, plonk::*, poly::kzg::commitment::ParamsKZG },
+    halo2_proofs::{halo2curves::bn256::Fr, plonk::*},
     utils::testing::gen_proof,
 };
-use rand::rngs::OsRng;
 
-use criterion::{ criterion_group, criterion_main };
-use criterion::{ BenchmarkId, Criterion };
+use criterion::{criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion};
 
-use pprof::criterion::{ Output, PProfProfiler };
-use zksnap_halo2::voter_circuit::utils::generate_random_voter_circuit_inputs;
-use zksnap_halo2::voter_circuit::{ voter_circuit, VoterCircuitInput };
+use pprof::criterion::{Output, PProfProfiler};
+use zksnap_halo2::state_transition_circuit::StateTransitionCircuit;
+use zksnap_halo2::voter_circuit::VoterCircuit;
+use zksnap_halo2::wrapper_circuit::common::{gen_dummy_snark, gen_pk, gen_snark};
+use zksnap_halo2::wrapper_circuit::recursion::RecursionCircuit;
+use zksnap_halo2::wrapper_circuit::utils::generate_wrapper_circuit_input;
 // Thanks to the example provided by @jebbow in his article
 // https://www.jibbow.com/posts/criterion-flamegraphs/
 
 const K: u32 = 22;
 
-fn voter_circuit_bench(
-    stage: CircuitBuilderStage,
-    input: VoterCircuitInput<Fr>,
-    config_params: Option<BaseCircuitParams>,
-    break_points: Option<MultiPhaseThreadBreakPoints>
-) -> RangeCircuitBuilder<Fr> {
-    let k = K as usize;
-    let lookup_bits = k - 1;
-    let mut builder = match stage {
-        CircuitBuilderStage::Prover => {
-            RangeCircuitBuilder::prover(config_params.unwrap(), break_points.unwrap())
-        }
-        _ => RangeCircuitBuilder::from_stage(stage).use_k(k).use_lookup_bits(lookup_bits),
-    };
-
-    let start0 = start_timer!(|| format!("Witness generation for circuit in {stage:?} stage"));
-    let range = builder.range_chip();
-
-    let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
-    voter_circuit(builder.main(0), &range, input, &mut public_inputs);
-
-    end_timer!(start0);
-    if !stage.witness_gen_only() {
-        builder.calculate_params(Some(20));
-    }
-    builder
-}
-
 fn bench(c: &mut Criterion) {
-    let voter_input = generate_random_voter_circuit_inputs();
-    let circuit = voter_circuit_bench(CircuitBuilderStage::Keygen, voter_input.clone(), None, None);
-    let config_params = circuit.params();
+    let (voter_inputs, state_transition_inputs) = generate_wrapper_circuit_input(1);
 
-    let params = ParamsKZG::<Bn256>::setup(K, OsRng);
-    let vk = keygen_vk(&params, &circuit).expect("vk should not fail");
-    let pk = keygen_pk(&params, vk, &circuit).expect("pk should not fail");
-    let break_points = circuit.break_points();
+    // Generating voter proof
+    let voter_config = BaseCircuitParams {
+        k: 15,
+        num_advice_per_phase: vec![1],
+        num_lookup_advice_per_phase: vec![1, 0, 0],
+        num_fixed: 1,
+        lookup_bits: Some(14),
+        num_instance_columns: 1,
+    };
+    let voter_params = gen_srs(15);
+    let voter_circuit = VoterCircuit::new(voter_config.clone(), voter_inputs[0].clone());
+    let voter_pk = gen_pk(&voter_params, &voter_circuit);
+    let voter_snark = gen_snark(&voter_params, &voter_pk, voter_circuit);
+
+    // Generating state transition proof
+    let state_transition_config = BaseCircuitParams {
+        k: 15,
+        num_advice_per_phase: vec![3],
+        num_lookup_advice_per_phase: vec![1, 0, 0],
+        num_fixed: 1,
+        lookup_bits: Some(14),
+        num_instance_columns: 1,
+    };
+    let state_transition_params = gen_srs(15);
+    let state_transition_circuit = StateTransitionCircuit::new(
+        state_transition_config.clone(),
+        state_transition_inputs[0].clone(),
+    );
+    let state_transition_pk = gen_pk(&state_transition_params, &state_transition_circuit);
+    let state_transition_snark = gen_snark(
+        &state_transition_params,
+        &state_transition_pk,
+        state_transition_circuit,
+    );
+
+    let recursion_config = BaseCircuitParams {
+        k: K as usize,
+        num_advice_per_phase: vec![4],
+        num_lookup_advice_per_phase: vec![1, 0, 0],
+        num_fixed: 1,
+        lookup_bits: Some((K - 1) as usize),
+        num_instance_columns: 1,
+    };
+    let recursion_params = gen_srs(K);
+
+    // Init Base Instances
+    let mut base_instances = [
+        Fr::zero(),                  // preprocessed_digest
+        voter_snark.instances[0][0], // pk_enc_n
+        voter_snark.instances[0][1],
+        voter_snark.instances[0][2], // pk_enc_g
+        voter_snark.instances[0][3],
+    ]
+    .to_vec();
+    base_instances.extend(state_transition_snark.instances[0][4..24].iter()); // init_vote
+    base_instances.extend([
+        state_transition_snark.instances[0][68], // nullifier_old_root
+        state_transition_snark.instances[0][68], // nullifier_new_root
+        voter_snark.instances[0][28],            // membership_root
+        voter_snark.instances[0][29],            // proposal_id
+        Fr::from(0),                             // round
+    ]);
+
+    let recursion_circuit = RecursionCircuit::new(
+        CircuitBuilderStage::Keygen,
+        &recursion_params,
+        gen_dummy_snark::<VoterCircuit<Fr>>(&voter_params, Some(voter_pk.get_vk()), voter_config),
+        gen_dummy_snark::<StateTransitionCircuit<Fr>>(
+            &state_transition_params,
+            Some(state_transition_pk.get_vk()),
+            state_transition_config,
+        ),
+        RecursionCircuit::initial_snark(
+            &recursion_params,
+            None,
+            recursion_config.clone(),
+            base_instances.clone(),
+        ),
+        0,
+        recursion_config,
+    );
+    let pk = gen_pk(&recursion_params, &recursion_circuit);
+    let config_params = recursion_circuit.inner().params();
 
     let mut group = c.benchmark_group("plonk-prover");
     group.sample_size(10);
     group.bench_with_input(
-        BenchmarkId::new("voter circuit", K),
-        &(&params, &pk, &voter_input),
-        |bencher, &(params, pk, voter_input)| {
-            let input = voter_input.clone();
+        BenchmarkId::new("wrapper circuit", K),
+        &(
+            &recursion_params,
+            &pk,
+            &voter_snark,
+            &state_transition_snark,
+        ),
+        |bencher, &(params, pk, voter_snark, state_transition_snark)| {
+            let cloned_voter_snark = voter_snark;
+            let cloned_state_transition_snark = state_transition_snark;
             bencher.iter(|| {
-                let circuit = voter_circuit_bench(
+                let cloned_config_params = config_params.clone();
+                let circuit = RecursionCircuit::new(
                     CircuitBuilderStage::Prover,
-                    input.clone(),
-                    Some(config_params.clone()),
-                    Some(break_points.clone())
+                    &params,
+                    cloned_voter_snark.clone(),
+                    cloned_state_transition_snark.clone(),
+                    RecursionCircuit::initial_snark(
+                        &params,
+                        None,
+                        cloned_config_params.clone(),
+                        base_instances.clone(),
+                    ),
+                    0,
+                    cloned_config_params,
                 );
 
                 gen_proof(params, pk, circuit);
             })
-        }
+        },
     );
     group.finish()
 }
