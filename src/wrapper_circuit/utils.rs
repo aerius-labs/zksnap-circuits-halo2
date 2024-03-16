@@ -151,7 +151,6 @@ fn generate_state_transition_circuit_inputs(
     ]);
     leaves[round as usize] = new_native_hasher.squeeze_and_reset();
     tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut new_native_hasher, leaves.clone()).unwrap();
-    let (new_low_leaf_proof, _) = tree.get_proof(low_leaf_idx);
     let (new_leaf_proof, new_leaf_proof_helper) = tree.get_proof(round as usize);
     assert_eq!(
         tree.verify_proof(
@@ -181,7 +180,6 @@ fn generate_state_transition_circuit_inputs(
         low_leaf,
         low_leaf_proof,
         low_leaf_proof_helper,
-        new_low_leaf_proof,
         new_root,
         new_leaf,
         new_leaf_index,

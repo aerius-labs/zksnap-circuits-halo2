@@ -112,7 +112,6 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTranInput<Fr> {
         low_leaf,
         low_leaf_proof,
         low_leaf_proof_helper,
-        new_low_leaf_proof,
         new_root,
         new_leaf,
         new_leaf_index,
