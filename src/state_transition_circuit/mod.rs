@@ -303,7 +303,6 @@ impl<F: BigPrimeField> StateTransitionCircuit<F> {
         state_trans_circuit(ctx, &range, input.clone(), &mut public_inputs);
         inner.assigned_instances[0].extend(public_inputs);
         inner.calculate_params(Some(10));
-        println!("state transition config: {:?}", inner.params());
         Self { input, inner }
     }
 }
@@ -360,8 +359,7 @@ mod test {
 
     #[test]
     fn test_state_trans_circuit() {
-        let input = generate_random_state_transition_circuit_inputs();
-        let (_, multiple_input) = generate_wrapper_circuit_input(3);
+        let (_, multiple_input) = generate_wrapper_circuit_input(4);
 
         let config = BaseCircuitParams {
             k: 15,
@@ -372,10 +370,9 @@ mod test {
             num_instance_columns: 1,
         };
 
-        for input in multiple_input {
-            println!("------round--------");
+        for (round, input) in multiple_input.iter().enumerate() {
+            println!("------round[{}]--------", round);
 
-            // println!("state input")
             let circuit = StateTransitionCircuit::new(config.clone(), input.clone());
             let prover = MockProver::run(15, &circuit, circuit.instances()).unwrap();
             prover.verify().unwrap();

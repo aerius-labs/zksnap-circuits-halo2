@@ -1,3 +1,5 @@
+use std::os::unix::thread;
+
 use halo2_base::halo2_proofs::arithmetic::Field;
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use halo2_base::halo2_proofs::halo2curves::group::Curve;
@@ -8,7 +10,7 @@ use num_bigint::{BigUint, RandBigInt};
 use paillier_chip::paillier::{paillier_add_native, paillier_enc_native};
 use pse_poseidon::Poseidon;
 use rand::rngs::OsRng;
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 
 use crate::merkletree::native::MerkleTree;
 use crate::state_transition_circuit::utils::{
@@ -34,9 +36,10 @@ fn generate_voter_circuit_inputs(
     vote: Vec<Fr>,
     r_enc: Vec<BigUint>,
     members_tree: &MerkleTree<'_, Fr, T, RATE>,
+    round: usize,
 ) -> VoterCircuitInput<Fr> {
     let membership_root = members_tree.get_root();
-    let (membership_proof, membership_proof_helper) = members_tree.get_proof(0);
+    let (membership_proof, membership_proof_helper) = members_tree.get_proof(round);
 
     let mut vote_enc = Vec::<BigUint>::with_capacity(vote.len());
     for i in 0..vote.len() {
@@ -92,6 +95,7 @@ fn update_idx_leaf(
             nullifier_tree_preimages[i].next_val = new_val;
             nullifier_tree_preimages[i].next_idx = Fr::from(new_val_idx);
             low_leaf_idx = i;
+            break;
         }
     }
     (nullifier_tree_preimages, low_leaf_idx)
@@ -142,12 +146,12 @@ fn generate_state_transition_circuit_inputs(
     leaves[low_leaf_idx] = new_native_hasher.squeeze_and_reset();
     new_native_hasher.update(&[
         updated_idx_leaves[round as usize].val,
-        updated_idx_leaves[round as usize].next_idx,
         updated_idx_leaves[round as usize].next_val,
+        updated_idx_leaves[round as usize].next_idx,
     ]);
     leaves[round as usize] = new_native_hasher.squeeze_and_reset();
-    let (new_low_leaf_proof, _) = tree.get_proof(low_leaf_idx);
     tree = IndexedMerkleTree::<Fr, T, RATE>::new(&mut new_native_hasher, leaves.clone()).unwrap();
+    let (new_low_leaf_proof, _) = tree.get_proof(low_leaf_idx);
     let (new_leaf_proof, new_leaf_proof_helper) = tree.get_proof(round as usize);
     assert_eq!(
         tree.verify_proof(
@@ -162,8 +166,8 @@ fn generate_state_transition_circuit_inputs(
     let new_root = tree.get_root();
     let new_leaf = IMTLeaf::<Fr> {
         val: updated_idx_leaves[round as usize].val,
-        next_val: updated_idx_leaves[round as usize].next_idx,
-        next_idx: updated_idx_leaves[round as usize].next_val,
+        next_val: updated_idx_leaves[round as usize].next_val,
+        next_idx: updated_idx_leaves[round as usize].next_idx,
     };
     let new_leaf_index = Fr::from(round);
     let is_new_leaf_largest = if new_leaf.next_val == Fr::zero() {
@@ -261,7 +265,7 @@ pub(crate) fn generate_wrapper_circuit_input(
 
     let members_tree = MerkleTree::new(&mut native_hasher, members_tree_leaves.clone()).unwrap();
 
-    let mut vote = [Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()].to_vec();
+    let mut rng = thread_rng();
     let mut prev_vote = Vec::<BigUint>::new();
 
     let mut voter_inputs = Vec::<VoterCircuitInput<Fr>>::new();
@@ -285,6 +289,8 @@ pub(crate) fn generate_wrapper_circuit_input(
         .collect::<Vec<Fr>>();
 
     for i in 0..num_round {
+        let mut vote = [Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()].to_vec();
+        vote[rng.gen_range(0..5)] = Fr::one();
         let (nullifier, s, c) = gen_test_nullifier(&sk[i], &[1u8, 0u8]);
         verify_nullifier(&[1u8, 0u8], &nullifier, &pk_voter[i], &s, &c);
 
@@ -307,6 +313,7 @@ pub(crate) fn generate_wrapper_circuit_input(
             vote.clone(),
             r_enc.clone(),
             &members_tree,
+            i,
         ));
 
         let mut vote_enc = Vec::<BigUint>::with_capacity(5);
@@ -337,12 +344,14 @@ pub(crate) fn generate_wrapper_circuit_input(
             .zip(vote_enc)
             .map(|(x, y)| paillier_add_native(&n, &x, &y))
             .collect::<Vec<_>>();
-
-        vote[i] = Fr::zero();
-        if i != num_round {
-            vote[i + 1] = Fr::one();
-        }
     }
 
     (voter_inputs, state_inputs)
+}
+fn print_nullifier_leafs(node: Vec<IMTLeaf<Fr>>) {
+    for (i, x) in node.iter().enumerate() {
+        println!("val[{}]={:?}", i, x.val);
+        println!("nxt_idx[{}]={:?}", i, x.next_idx);
+        println!("next_val[{}]={:?}\n", i, x.next_val);
+    }
 }
