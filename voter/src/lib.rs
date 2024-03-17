@@ -3,35 +3,34 @@ pub mod utils;
 
 use halo2_base::{
     gates::{
-        circuit::{ builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig },
-        GateInstructions,
-        RangeChip,
-        RangeInstructions,
+        circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig},
+        GateInstructions, RangeChip, RangeInstructions,
     },
     halo2_proofs::{
-        circuit::{ Layouter, SimpleFloorPlanner, Value },
-        halo2curves::{ group::ff::Field, secp256k1::{ Fq, Secp256k1Affine } },
-        plonk::{ Circuit, ConstraintSystem, Error, Selector },
+        circuit::{Layouter, SimpleFloorPlanner, Value},
+        halo2curves::{
+            group::ff::Field,
+            secp256k1::{Fq, Secp256k1Affine},
+        },
+        plonk::{Circuit, ConstraintSystem, Error, Selector},
     },
-    poseidon::hasher::{ spec::OptimizedPoseidonSpec, PoseidonHasher },
-    utils::{ fe_to_biguint, BigPrimeField },
-    AssignedValue,
-    Context,
-    QuantumCell,
+    poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher},
+    utils::{fe_to_biguint, BigPrimeField},
+    AssignedValue, Context, QuantumCell,
 };
 use halo2_ecc::{
-    bigint::{ big_is_even, ProperCrtUint },
-    ecc::{ EcPoint, EccChip },
+    bigint::{big_is_even, ProperCrtUint},
+    ecc::{EcPoint, EccChip},
     fields::FieldChip,
-    secp256k1::{ sha256::Sha256Chip, FpChip, FqChip },
+    secp256k1::{sha256::Sha256Chip, FpChip, FqChip},
 };
 use itertools::Itertools;
 use merkletree::verify_membership_proof;
 use num_bigint::BigUint;
 
 use biguint_halo2::big_uint::chip::BigUintChip;
-use paillier_chip::paillier::{ EncryptionPublicKeyAssigned, PaillierChip };
-use plume_halo2::plume::{ verify_plume, PlumeInput };
+use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
+use plume_halo2::plume::{verify_plume, PlumeInput};
 use serde::Deserialize;
 
 const ENC_BIT_LEN: usize = 176;
@@ -86,7 +85,7 @@ impl<F: BigPrimeField> VoterCircuitInput<F> {
         pk_voter: Secp256k1Affine,
         c_nullifier: Fq,
         membership_proof: Vec<F>,
-        membership_proof_helper: Vec<F>
+        membership_proof_helper: Vec<F>,
     ) -> Self {
         Self {
             membership_root,
@@ -123,7 +122,7 @@ pub trait CircuitExt<F: Field>: Circuit<F> {
 pub fn compress_nullifier<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,
-    nullifier: &EcPoint<F, ProperCrtUint<F>>
+    nullifier: &EcPoint<F, ProperCrtUint<F>>,
 ) -> Vec<AssignedValue<F>> {
     let mut compressed_pt = Vec::<AssignedValue<F>>::with_capacity(4);
 
@@ -131,17 +130,15 @@ pub fn compress_nullifier<F: BigPrimeField>(
         range,
         ctx,
         nullifier.y().as_ref().truncation.clone(),
-        LIMB_BIT_LEN
+        LIMB_BIT_LEN,
     );
 
-    let tag = range
-        .gate()
-        .select(
-            ctx,
-            QuantumCell::Constant(F::from(2u64)),
-            QuantumCell::Constant(F::from(3u64)),
-            is_y_even
-        );
+    let tag = range.gate().select(
+        ctx,
+        QuantumCell::Constant(F::from(2u64)),
+        QuantumCell::Constant(F::from(3u64)),
+        is_y_even,
+    );
 
     compressed_pt.push(tag);
     compressed_pt.extend(nullifier.x().limbs().to_vec());
@@ -153,7 +150,7 @@ pub fn voter_circuit<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,
     input: VoterCircuitInput<F>,
-    public_inputs: &mut Vec<AssignedValue<F>>
+    public_inputs: &mut Vec<AssignedValue<F>>,
 ) {
     // Initializing required chips for the circuit.
     let gate = range.gate();
@@ -174,11 +171,13 @@ pub fn voter_circuit<F: BigPrimeField>(
     let membership_root = ctx.load_witness(input.membership_root);
     let leaf_preimage = [pk_voter.x().limbs(), pk_voter.y().limbs()].concat();
     let leaf = hasher.hash_fix_len_array(ctx, gate, &leaf_preimage[..]);
-    let membership_proof = input.membership_proof
+    let membership_proof = input
+        .membership_proof
         .iter()
         .map(|&proof| ctx.load_witness(proof))
         .collect::<Vec<_>>();
-    let membership_proof_helper = input.membership_proof_helper
+    let membership_proof_helper = input
+        .membership_proof_helper
         .iter()
         .map(|&helper| ctx.load_witness(helper))
         .collect::<Vec<_>>();
@@ -189,25 +188,37 @@ pub fn voter_circuit<F: BigPrimeField>(
     let g_assigned = biguint_chip
         .assign_integer(ctx, Value::known(input.pk_enc.g.clone()), ENC_BIT_LEN)
         .unwrap();
-    let vote_assigned_fe = input.vote
+    let vote_assigned_fe = input
+        .vote
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let vote_assigned_big = input.vote
+    let vote_assigned_big = input
+        .vote
         .iter()
         .map(fe_to_biguint)
-        .map(|x| { biguint_chip.assign_integer(ctx, Value::known(x), ENC_BIT_LEN * 2).unwrap() })
-        .collect_vec();
-    let vote_enc_assigned_big = input.vote_enc
-        .iter()
         .map(|x| {
-            biguint_chip.assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2).unwrap()
+            biguint_chip
+                .assign_integer(ctx, Value::known(x), ENC_BIT_LEN * 2)
+                .unwrap()
         })
         .collect_vec();
-    let r_assigned = input.r_enc
+    let vote_enc_assigned_big = input
+        .vote_enc
         .iter()
         .map(|x| {
-            biguint_chip.assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN).unwrap()
+            biguint_chip
+                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2)
+                .unwrap()
+        })
+        .collect_vec();
+    let r_assigned = input
+        .r_enc
+        .iter()
+        .map(|x| {
+            biguint_chip
+                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN)
+                .unwrap()
         })
         .collect::<Vec<_>>();
 
@@ -224,14 +235,16 @@ pub fn voter_circuit<F: BigPrimeField>(
         &membership_root,
         &leaf,
         &membership_proof,
-        &membership_proof_helper
+        &membership_proof_helper,
     );
 
     // Check to verify correct votes have been passed.
     let _ = vote_assigned_fe.iter().map(|x| gate.assert_bit(ctx, *x));
     let zero = ctx.load_zero();
     let one = ctx.load_constant(F::ONE);
-    let vote_sum_assigned = vote_assigned_fe.iter().fold(zero, |zero, x| gate.add(ctx, zero, *x));
+    let vote_sum_assigned = vote_assigned_fe
+        .iter()
+        .fold(zero, |zero, x| gate.add(ctx, zero, *x));
     ctx.constrain_equal(&vote_sum_assigned, &one);
 
     //PK_ENC_n
@@ -255,9 +268,7 @@ pub fn voter_circuit<F: BigPrimeField>(
     }
 
     // 3. Verify nullifier
-    let message = proposal_id
-        .value()
-        .to_bytes_le()[..2]
+    let message = proposal_id.value().to_bytes_le()[..2]
         .iter()
         .map(|v| ctx.load_witness(F::from(*v as u64)))
         .collect::<Vec<_>>();
@@ -268,7 +279,7 @@ pub fn voter_circuit<F: BigPrimeField>(
                 ctx,
                 message[i],
                 QuantumCell::Constant(F::from(1u64 << (8 * i))),
-                _proposal_id
+                _proposal_id,
             );
         }
         ctx.constrain_equal(&_proposal_id, &proposal_id);
@@ -281,7 +292,7 @@ pub fn voter_circuit<F: BigPrimeField>(
         s_nullifier.clone(),
         c_nullifier,
         pk_voter,
-        message
+        message,
     );
     verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
 
@@ -349,12 +360,10 @@ impl<F: BigPrimeField> CircuitExt<F> for VoterCircuit<F> {
     }
 
     fn instances(&self) -> Vec<Vec<F>> {
-        vec![
-            self.inner.assigned_instances[0]
-                .iter()
-                .map(|instance| *instance.value())
-                .collect()
-        ]
+        vec![self.inner.assigned_instances[0]
+            .iter()
+            .map(|instance| *instance.value())
+            .collect()]
     }
 }
 
@@ -362,12 +371,12 @@ impl<F: BigPrimeField> CircuitExt<F> for VoterCircuit<F> {
 mod test {
     use halo2_base::{
         gates::circuit::BaseCircuitParams,
-        halo2_proofs::{ dev::MockProver, halo2curves::bn256::Fr },
+        halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr},
         utils::testing::base_test,
         AssignedValue,
     };
 
-    use super::{ utils::generate_random_voter_circuit_inputs, voter_circuit, VoterCircuit };
+    use super::{utils::generate_random_voter_circuit_inputs, voter_circuit, VoterCircuit};
 
     #[test]
     fn test_voter_circuit() {

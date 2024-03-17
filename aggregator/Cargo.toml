@@ -34,8 +34,3 @@ harness = false
 [[bench]]
 name = "wrapper_circuit"
 harness = false
-
-# For performance profiling
-[profile.flamegraph]
-inherits = "release"
-debug = true

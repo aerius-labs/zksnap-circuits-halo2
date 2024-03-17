@@ -1,26 +1,25 @@
 use halo2_base::gates::circuit::builder::BaseCircuitBuilder;
-use halo2_base::gates::circuit::{ BaseCircuitParams, BaseConfig };
+use halo2_base::gates::circuit::{BaseCircuitParams, BaseConfig};
 use halo2_base::gates::GateInstructions;
-use halo2_base::halo2_proofs::circuit::{ Layouter, SimpleFloorPlanner };
-use halo2_base::halo2_proofs::plonk::{ Circuit, ConstraintSystem, Error };
-use halo2_base::poseidon::hasher::{ spec::OptimizedPoseidonSpec, PoseidonHasher };
+use halo2_base::halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
+use halo2_base::halo2_proofs::plonk::{Circuit, ConstraintSystem, Error};
+use halo2_base::poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher};
 use halo2_base::{
-    gates::{ RangeChip, RangeInstructions },
+    gates::{RangeChip, RangeInstructions},
     halo2_proofs::circuit::Value,
     utils::BigPrimeField,
-    AssignedValue,
-    Context,
+    AssignedValue, Context,
 };
 use halo2_ecc::ecc::EccChip;
 use halo2_ecc::fields::fp::FpChip;
-use indexed_merkle_tree_halo2::indexed_merkle_tree::{ insert_leaf, IndexedMerkleTreeLeaf };
+use indexed_merkle_tree_halo2::indexed_merkle_tree::{insert_leaf, IndexedMerkleTreeLeaf};
 use indexed_merkle_tree_halo2::utils::IndexedMerkleTreeLeaf as IMTLeaf;
 use num_bigint::BigUint;
 
 use biguint_halo2::big_uint::chip::BigUintChip;
-use halo2_base::halo2_proofs::halo2curves::secp256k1::{ Fp, Secp256k1Affine };
-use paillier_chip::paillier::{ EncryptionPublicKeyAssigned, PaillierChip };
-use voter::{ compress_nullifier, CircuitExt, EncryptionPublicKey };
+use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp, Secp256k1Affine};
+use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
+use voter::{compress_nullifier, CircuitExt, EncryptionPublicKey};
 
 const ENC_BIT_LEN: usize = 176;
 const LIMB_BIT_LEN: usize = 88;
@@ -52,7 +51,7 @@ impl<F: BigPrimeField> IndexedMerkleTreeInput<F> {
         new_leaf_index: F,
         new_leaf_proof: Vec<F>,
         new_leaf_proof_helper: Vec<F>,
-        is_new_leaf_largest: F
+        is_new_leaf_largest: F,
     ) -> Self {
         Self {
             old_root,
@@ -83,7 +82,7 @@ impl<F: BigPrimeField> StateTransitionInput<F> {
         incoming_vote: Vec<BigUint>,
         prev_vote: Vec<BigUint>,
         nullifier_tree: IndexedMerkleTreeInput<F>,
-        nullifier: Secp256k1Affine
+        nullifier: Secp256k1Affine,
     ) -> Self {
         Self {
             pk_enc,
@@ -99,7 +98,7 @@ pub fn state_transition_circuit<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,
     input: StateTransitionInput<F>,
-    public_inputs: &mut Vec<AssignedValue<F>>
+    public_inputs: &mut Vec<AssignedValue<F>>,
 ) {
     let gate = range.gate();
     let mut hasher = PoseidonHasher::<F, 3, 2>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
@@ -128,16 +127,22 @@ pub fn state_transition_circuit<F: BigPrimeField>(
         g: g_assigned,
     };
 
-    let incoming_vote = input.incoming_vote
+    let incoming_vote = input
+        .incoming_vote
         .iter()
         .map(|x| {
-            biguint_chip.assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2).unwrap()
+            biguint_chip
+                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2)
+                .unwrap()
         })
         .collect::<Vec<_>>();
-    let prev_vote = input.prev_vote
+    let prev_vote = input
+        .prev_vote
         .iter()
         .map(|x| {
-            biguint_chip.assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2).unwrap()
+            biguint_chip
+                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2)
+                .unwrap()
         })
         .collect::<Vec<_>>();
 
@@ -169,19 +174,27 @@ pub fn state_transition_circuit<F: BigPrimeField>(
     let new_leaf_index = ctx.load_witness(input.nullifier_tree.new_leaf_index);
     let is_new_leaf_largest = ctx.load_witness(input.nullifier_tree.is_new_leaf_largest);
 
-    let low_leaf_proof = input.nullifier_tree.low_leaf_proof
+    let low_leaf_proof = input
+        .nullifier_tree
+        .low_leaf_proof
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let low_leaf_proof_helper = input.nullifier_tree.low_leaf_proof_helper
+    let low_leaf_proof_helper = input
+        .nullifier_tree
+        .low_leaf_proof_helper
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let new_leaf_proof = input.nullifier_tree.new_leaf_proof
+    let new_leaf_proof = input
+        .nullifier_tree
+        .new_leaf_proof
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let new_leaf_proof_helper = input.nullifier_tree.new_leaf_proof_helper
+    let new_leaf_proof_helper = input
+        .nullifier_tree
+        .new_leaf_proof_helper
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
@@ -199,7 +212,7 @@ pub fn state_transition_circuit<F: BigPrimeField>(
         &new_leaf_index,
         &new_leaf_proof,
         &new_leaf_proof_helper,
-        &is_new_leaf_largest
+        &is_new_leaf_largest,
     );
 
     // PK_ENC N
@@ -286,12 +299,10 @@ impl<F: BigPrimeField> CircuitExt<F> for StateTransitionCircuit<F> {
     }
 
     fn instances(&self) -> Vec<Vec<F>> {
-        vec![
-            self.inner.assigned_instances[0]
-                .iter()
-                .map(|instance| *instance.value())
-                .collect()
-        ]
+        vec![self.inner.assigned_instances[0]
+            .iter()
+            .map(|instance| *instance.value())
+            .collect()]
     }
 }
 
@@ -299,7 +310,7 @@ impl<F: BigPrimeField> CircuitExt<F> for StateTransitionCircuit<F> {
 mod test {
     use halo2_base::{
         gates::circuit::BaseCircuitParams,
-        halo2_proofs::{ dev::MockProver, halo2curves::bn256::Fr },
+        halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr},
         utils::testing::base_test,
         AssignedValue,
     };
@@ -307,7 +318,7 @@ mod test {
 
     use crate::utils::generate_wrapper_circuit_input;
 
-    use super::{ state_transition_circuit, StateTransitionCircuit };
+    use super::{state_transition_circuit, StateTransitionCircuit};
 
     #[test]
     fn test_state_transition_circuit() {

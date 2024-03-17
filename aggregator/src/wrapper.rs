@@ -1,26 +1,22 @@
-use ark_std::{ end_timer, start_timer };
+use ark_std::{end_timer, start_timer};
 use common::*;
 use halo2_base::halo2_proofs;
 use halo2_proofs::{
-    circuit::{ Layouter, SimpleFloorPlanner },
+    circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
-    halo2curves::{ bn256::{ Bn256, Fr, G1Affine }, group::ff::Field },
+    halo2curves::{
+        bn256::{Bn256, Fr, G1Affine},
+        group::ff::Field,
+    },
     plonk::{
-        create_proof,
-        keygen_pk,
-        keygen_vk,
-        Circuit,
-        ConstraintSystem,
-        Error,
-        ProvingKey,
-        Selector,
+        create_proof, keygen_pk, keygen_vk, Circuit, ConstraintSystem, Error, ProvingKey, Selector,
         VerifyingKey,
     },
     poly::{
         commitment::ParamsProver,
         kzg::{
             commitment::ParamsKZG,
-            multiopen::{ ProverGWC, VerifierGWC },
+            multiopen::{ProverGWC, VerifierGWC},
             strategy::AccumulatorStrategy,
         },
         VerificationStrategy,
@@ -29,17 +25,23 @@ use halo2_proofs::{
 use itertools::Itertools;
 use rand_chacha::rand_core::OsRng;
 use snark_verifier_sdk::snark_verifier::{
-    loader::{ self, native::NativeLoader, Loader, ScalarLoader },
+    loader::{self, native::NativeLoader, Loader, ScalarLoader},
     pcs::{
-        kzg::{ Gwc19, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding },
-        AccumulationScheme,
-        AccumulationSchemeProver,
+        kzg::{Gwc19, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey, LimbsEncoding},
+        AccumulationScheme, AccumulationSchemeProver,
     },
-    system::halo2::{ self, compile, Config },
-    util::{ arithmetic::{ fe_to_fe, fe_to_limbs }, hash },
-    verifier::{ self, plonk::{ PlonkProof, PlonkProtocol }, SnarkVerifier },
+    system::halo2::{self, compile, Config},
+    util::{
+        arithmetic::{fe_to_fe, fe_to_limbs},
+        hash,
+    },
+    verifier::{
+        self,
+        plonk::{PlonkProof, PlonkProtocol},
+        SnarkVerifier,
+    },
 };
-use std::{ iter, marker::PhantomData, rc::Rc };
+use std::{iter, marker::PhantomData, rc::Rc};
 
 const LIMBS: usize = 3;
 const BITS: usize = 88;
@@ -54,28 +56,20 @@ type As = KzgAs<Bn256, Gwc19>;
 type PlonkVerifier = verifier::plonk::PlonkVerifier<As, LimbsEncoding<LIMBS, BITS>>;
 type PlonkSuccinctVerifier = verifier::plonk::PlonkSuccinctVerifier<As, LimbsEncoding<LIMBS, BITS>>;
 type Poseidon<L> = hash::Poseidon<Fr, L, T, RATE>;
-type PoseidonTranscript<L, S> = halo2::transcript::halo2::PoseidonTranscript<
-    G1Affine,
-    L,
-    S,
-    T,
-    RATE,
-    R_F,
-    R_P
->;
+type PoseidonTranscript<L, S> =
+    halo2::transcript::halo2::PoseidonTranscript<G1Affine, L, S, T, RATE, R_F, R_P>;
 
 pub mod common {
     use super::*;
-    use halo2_proofs::{ plonk::verify_proof, poly::commitment::Params };
+    use halo2_proofs::{plonk::verify_proof, poly::commitment::Params};
     use snark_verifier_sdk::snark_verifier::{
-        cost::CostEstimation,
-        util::transcript::TranscriptWrite,
+        cost::CostEstimation, util::transcript::TranscriptWrite,
     };
     use voter::CircuitExt;
 
     pub fn poseidon<L: Loader<G1Affine>>(
         loader: &L,
-        inputs: &[L::LoadedScalar]
+        inputs: &[L::LoadedScalar],
     ) -> L::LoadedScalar {
         // warning: generating a new spec is time intensive, use lazy_static in production
         let mut hasher = Poseidon::new::<R_F, R_P, SECURE_MDS>(loader);
@@ -94,7 +88,7 @@ pub mod common {
         pub fn new(
             protocol: PlonkProtocol<G1Affine>,
             instances: Vec<Vec<Fr>>,
-            proof: Vec<u8>
+            proof: Vec<u8>,
         ) -> Self {
             Self {
                 protocol,
@@ -117,42 +111,44 @@ pub mod common {
         params: &ParamsKZG<Bn256>,
         pk: &ProvingKey<G1Affine>,
         circuit: C,
-        instances: Vec<Vec<Fr>>
+        instances: Vec<Vec<Fr>>,
     ) -> Vec<u8> {
         if params.k() > 3 {
             let mock = start_timer!(|| "Mock prover");
-            MockProver::run(params.k(), &circuit, instances.clone()).unwrap().assert_satisfied();
+            MockProver::run(params.k(), &circuit, instances.clone())
+                .unwrap()
+                .assert_satisfied();
             end_timer!(mock);
         }
 
         let instances = instances.iter().map(Vec::as_slice).collect_vec();
         let proof = {
-            let mut transcript = PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(
-                Vec::new()
-            );
+            let mut transcript =
+                PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(Vec::new());
             create_proof::<_, ProverGWC<_>, _, _, _, _>(
                 params,
                 pk,
                 &[circuit],
                 &[instances.as_slice()],
                 OsRng,
-                &mut transcript
-            ).unwrap();
+                &mut transcript,
+            )
+            .unwrap();
             transcript.finalize()
         };
 
         let accept = {
-            let mut transcript = PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(
-                proof.as_slice()
-            );
+            let mut transcript =
+                PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(proof.as_slice());
             VerificationStrategy::<_, VerifierGWC<_>>::finalize(
                 verify_proof::<_, VerifierGWC<_>, _, _, _>(
                     params.verifier_params(),
                     pk.get_vk(),
                     AccumulatorStrategy::new(params.verifier_params()),
                     &[instances.as_slice()],
-                    &mut transcript
-                ).unwrap()
+                    &mut transcript,
+                )
+                .unwrap(),
             )
         };
         assert!(accept);
@@ -163,14 +159,14 @@ pub mod common {
     pub fn gen_snark<ConcreteCircuit: CircuitExt<Fr>>(
         params: &ParamsKZG<Bn256>,
         pk: &ProvingKey<G1Affine>,
-        circuit: ConcreteCircuit
+        circuit: ConcreteCircuit,
     ) -> Snark {
         let protocol = compile(
             params,
             pk.get_vk(),
             Config::kzg()
                 .with_num_instance(ConcreteCircuit::num_instance())
-                .with_accumulator_indices(ConcreteCircuit::accumulator_indices())
+                .with_accumulator_indices(ConcreteCircuit::accumulator_indices()),
         );
 
         let instances = circuit.instances();
@@ -182,13 +178,17 @@ pub mod common {
     pub fn gen_dummy_snark<ConcreteCircuit: CircuitExt<Fr>>(
         params: &ParamsKZG<Bn256>,
         vk: Option<&VerifyingKey<G1Affine>>,
-        config_params: ConcreteCircuit::Params
+        config_params: ConcreteCircuit::Params,
     ) -> Snark
-        where ConcreteCircuit::Params: Clone
+    where
+        ConcreteCircuit::Params: Clone,
     {
         struct CsProxy<F: Field, C: Circuit<F>>(C::Params, PhantomData<(F, C)>);
 
-        impl<F: Field, C: CircuitExt<F>> Circuit<F> for CsProxy<F, C> where C::Params: Clone {
+        impl<F: Field, C: CircuitExt<F>> Circuit<F> for CsProxy<F, C>
+        where
+            C::Params: Clone,
+        {
             type Config = C::Config;
             type FloorPlanner = C::FloorPlanner;
             type Params = C::Params;
@@ -203,7 +203,7 @@ pub mod common {
 
             fn configure_with_params(
                 meta: &mut ConstraintSystem<F>,
-                params: Self::Params
+                params: Self::Params,
             ) -> Self::Config {
                 C::configure_with_params(meta, params)
             }
@@ -215,7 +215,7 @@ pub mod common {
             fn synthesize(
                 &self,
                 config: Self::Config,
-                mut layouter: impl Layouter<F>
+                mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 // when `C` has simple selectors, we tell `CsProxy` not to over-optimize the selectors (e.g., compressing them  all into one) by turning all selectors on in the first row
                 // currently this only works if all simple selector columns are used in the actual circuit and there are overlaps amongst all enabled selectors (i.e., the actual circuit will not optimize constraint system further)
@@ -226,44 +226,39 @@ pub mod common {
                             q.enable(&mut region, 0)?;
                         }
                         Ok(())
-                    }
+                    },
                 )?;
                 Ok(())
             }
         }
 
-        let dummy_vk = vk
-            .is_none()
-            .then(|| {
-                keygen_vk(
-                    params,
-                    &CsProxy::<Fr, ConcreteCircuit>(config_params, PhantomData)
-                ).unwrap()
-            });
+        let dummy_vk = vk.is_none().then(|| {
+            keygen_vk(
+                params,
+                &CsProxy::<Fr, ConcreteCircuit>(config_params, PhantomData),
+            )
+            .unwrap()
+        });
         let protocol = compile(
             params,
             vk.or(dummy_vk.as_ref()).unwrap(),
             Config::kzg()
                 .with_num_instance(ConcreteCircuit::num_instance())
-                .with_accumulator_indices(ConcreteCircuit::accumulator_indices())
+                .with_accumulator_indices(ConcreteCircuit::accumulator_indices()),
         );
         let instances = ConcreteCircuit::num_instance()
             .into_iter()
-            .map(|n|
-                iter
-                    ::repeat_with(|| Fr::random(OsRng))
-                    .take(n)
-                    .collect()
-            )
+            .map(|n| iter::repeat_with(|| Fr::random(OsRng)).take(n).collect())
             .collect();
         let proof = {
-            let mut transcript = PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(
-                Vec::new()
-            );
-            for _ in 0..protocol.num_witness
+            let mut transcript =
+                PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(Vec::new());
+            for _ in 0..protocol
+                .num_witness
                 .iter()
                 .chain(Some(&protocol.quotient.num_chunk()))
-                .sum::<usize>() {
+                .sum::<usize>()
+            {
                 transcript.write_ec_point(G1Affine::random(OsRng)).unwrap();
             }
             for _ in 0..protocol.evaluations.len() {
@@ -286,19 +281,15 @@ pub mod recursion {
     use halo2_base::{
         gates::{
             circuit::{
-                builder::BaseCircuitBuilder,
-                BaseCircuitParams,
-                BaseConfig,
-                CircuitBuilderStage,
+                builder::BaseCircuitBuilder, BaseCircuitParams, BaseConfig, CircuitBuilderStage,
             },
-            GateInstructions,
-            RangeInstructions,
+            GateInstructions, RangeInstructions,
         },
         AssignedValue,
     };
-    use halo2_ecc::{ bn254::FpChip, ecc::EcPoint };
-    use snark_verifier_sdk::snark_verifier::loader::halo2::{ EccInstructions, IntegerInstructions };
-    use voter::{ CircuitExt, VoterCircuit };
+    use halo2_ecc::{bn254::FpChip, ecc::EcPoint};
+    use snark_verifier_sdk::snark_verifier::loader::halo2::{EccInstructions, IntegerInstructions};
+    use voter::{CircuitExt, VoterCircuit};
 
     use crate::state_transition::StateTransitionCircuit;
 
@@ -311,18 +302,21 @@ pub mod recursion {
         svk: &Svk,
         loader: &Rc<Halo2Loader<'a>>,
         snark: &Snark,
-        preprocessed_digest: Option<AssignedValue<Fr>>
-    ) -> (Vec<Vec<AssignedValue<Fr>>>, Vec<KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>>) {
+        preprocessed_digest: Option<AssignedValue<Fr>>,
+    ) -> (
+        Vec<Vec<AssignedValue<Fr>>>,
+        Vec<KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>>,
+    ) {
         let protocol = if let Some(preprocessed_digest) = preprocessed_digest {
             let preprocessed_digest = loader.scalar_from_assigned(preprocessed_digest);
             let protocol = snark.protocol.loaded_preprocessed_as_witness(loader, false);
-            let inputs = protocol.preprocessed
+            let inputs = protocol
+                .preprocessed
                 .iter()
                 .flat_map(|preprocessed| {
                     let assigned = preprocessed.assigned();
-                    [assigned.x(), assigned.y()].map(|coordinate|
-                        loader.scalar_from_assigned(*coordinate.native())
-                    )
+                    [assigned.x(), assigned.y()]
+                        .map(|coordinate| loader.scalar_from_assigned(*coordinate.native()))
                 })
                 .chain(protocol.transcript_initial_state.clone())
                 .collect_vec();
@@ -332,7 +326,8 @@ pub mod recursion {
             snark.protocol.loaded(loader)
         };
 
-        let instances = snark.instances
+        let instances = snark
+            .instances
             .iter()
             .map(|instances| {
                 instances
@@ -341,22 +336,12 @@ pub mod recursion {
                     .collect_vec()
             })
             .collect_vec();
-        let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _>::new::<SECURE_MDS>(
-            loader,
-            snark.proof()
-        );
-        let proof = PlonkSuccinctVerifier::read_proof(
-            svk,
-            &protocol,
-            &instances,
-            &mut transcript
-        ).unwrap();
-        let accumulators = PlonkSuccinctVerifier::verify(
-            svk,
-            &protocol,
-            &instances,
-            &proof
-        ).unwrap();
+        let mut transcript =
+            PoseidonTranscript::<Rc<Halo2Loader>, _>::new::<SECURE_MDS>(loader, snark.proof());
+        let proof =
+            PlonkSuccinctVerifier::read_proof(svk, &protocol, &instances, &mut transcript).unwrap();
+        let accumulators =
+            PlonkSuccinctVerifier::verify(svk, &protocol, &instances, &proof).unwrap();
 
         (
             instances
@@ -376,41 +361,35 @@ pub mod recursion {
         loader: &Rc<Halo2Loader<'a>>,
         condition: &AssignedValue<Fr>,
         lhs: &KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
-        rhs: &KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>
+        rhs: &KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
     ) -> Result<KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>, Error> {
         let [lhs, rhs]: [_; 2] = [lhs.lhs.assigned(), lhs.rhs.assigned()]
             .iter()
             .zip([rhs.lhs.assigned(), rhs.rhs.assigned()].iter())
             .map(|(lhs, rhs)| {
-                loader
-                    .ecc_chip()
-                    .select(
-                        loader.ctx_mut().main(),
-                        EcPoint::clone(lhs),
-                        EcPoint::clone(rhs),
-                        *condition
-                    )
+                loader.ecc_chip().select(
+                    loader.ctx_mut().main(),
+                    EcPoint::clone(lhs),
+                    EcPoint::clone(rhs),
+                    *condition,
+                )
             })
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
-        Ok(
-            KzgAccumulator::new(
-                loader.ec_point_from_assigned(lhs),
-                loader.ec_point_from_assigned(rhs)
-            )
-        )
+        Ok(KzgAccumulator::new(
+            loader.ec_point_from_assigned(lhs),
+            loader.ec_point_from_assigned(rhs),
+        ))
     }
 
     fn accumulate<'a>(
         loader: &Rc<Halo2Loader<'a>>,
         accumulators: Vec<KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>>,
-        as_proof: &[u8]
+        as_proof: &[u8],
     ) -> KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>> {
-        let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _>::new::<SECURE_MDS>(
-            loader,
-            as_proof
-        );
+        let mut transcript =
+            PoseidonTranscript::<Rc<Halo2Loader>, _>::new::<SECURE_MDS>(loader, as_proof);
         let proof = As::read_proof(&Default::default(), &accumulators, &mut transcript).unwrap();
         As::verify(&Default::default(), &accumulators, &proof).unwrap()
     }
@@ -457,31 +436,27 @@ pub mod recursion {
             state_transition: Snark,
             previous: Snark,
             round: usize,
-            config_params: BaseCircuitParams
+            config_params: BaseCircuitParams,
         ) -> Self {
             let svk = params.get_g()[0].into();
             let default_accumulator = KzgAccumulator::new(params.get_g()[1], params.get_g()[0]);
 
             let succinct_verify = |snark: &Snark| {
                 let mut transcript = PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(
-                    snark.proof.as_slice()
+                    snark.proof.as_slice(),
                 );
                 let proof = PlonkSuccinctVerifier::read_proof(
                     &svk,
                     &snark.protocol,
                     &snark.instances,
-                    &mut transcript
-                ).unwrap();
-                PlonkSuccinctVerifier::verify(
-                    &svk,
-                    &snark.protocol,
-                    &snark.instances,
-                    &proof
-                ).unwrap()
+                    &mut transcript,
+                )
+                .unwrap();
+                PlonkSuccinctVerifier::verify(&svk, &snark.protocol, &snark.instances, &proof)
+                    .unwrap()
             };
 
-            let accumulators = iter
-                ::empty()
+            let accumulators = iter::empty()
                 .chain(succinct_verify(&voter))
                 .chain(succinct_verify(&state_transition))
                 .chain(
@@ -490,25 +465,23 @@ pub mod recursion {
                         .unwrap_or_else(|| {
                             let num_accumulator = 1 + previous.protocol.accumulator_indices.len();
                             vec![default_accumulator.clone(); num_accumulator]
-                        })
+                        }),
                 )
                 .collect_vec();
 
             let (accumulator, as_proof) = {
-                let mut transcript = PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(
-                    Vec::new()
-                );
-                let accumulator = As::create_proof(
-                    &Default::default(),
-                    &accumulators,
-                    &mut transcript,
-                    OsRng
-                ).unwrap();
+                let mut transcript =
+                    PoseidonTranscript::<NativeLoader, _>::new::<SECURE_MDS>(Vec::new());
+                let accumulator =
+                    As::create_proof(&Default::default(), &accumulators, &mut transcript, OsRng)
+                        .unwrap();
                 (accumulator, transcript.finalize())
             };
 
             let preprocessed_digest = {
-                let inputs = previous.protocol.preprocessed
+                let inputs = previous
+                    .protocol
+                    .preprocessed
                     .iter()
                     .flat_map(|preprocessed| [preprocessed.x, preprocessed.y])
                     .map(fe_to_fe)
@@ -522,7 +495,8 @@ pub mod recursion {
                 voter.instances[0][1],
                 voter.instances[0][2],
                 voter.instances[0][3],
-            ].to_vec();
+            ]
+            .to_vec();
             current_instances.extend(state_transition.instances[0][44..64].iter());
             current_instances.extend([
                 state_transition.instances[0][68],
@@ -537,12 +511,12 @@ pub mod recursion {
                 accumulator.rhs.x,
                 accumulator.rhs.y,
             ]
-                .into_iter()
-                .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-                .chain([preprocessed_digest])
-                .chain(current_instances)
-                .chain([Fr::from(round as u64)])
-                .collect();
+            .into_iter()
+            .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
+            .chain([preprocessed_digest])
+            .chain(current_instances)
+            .chain([Fr::from(round as u64)])
+            .collect();
 
             let inner = BaseCircuitBuilder::from_stage(stage).use_params(config_params);
             let mut circuit = Self {
@@ -565,10 +539,8 @@ pub mod recursion {
             let main_gate = range.gate();
             let pool = self.inner.pool(0);
 
-            let preprocessed_digest = main_gate.assign_integer(
-                pool,
-                self.instances[Self::PREPROCESSED_DIGEST_ROW]
-            );
+            let preprocessed_digest =
+                main_gate.assign_integer(pool, self.instances[Self::PREPROCESSED_DIGEST_ROW]);
             let pk_enc_n = self.instances[Self::PK_ENC_N_ROW..Self::PK_ENC_N_ROW + 2]
                 .iter()
                 .map(|instance| main_gate.assign_integer(pool, *instance))
@@ -581,18 +553,12 @@ pub mod recursion {
                 .iter()
                 .map(|instance| main_gate.assign_integer(pool, *instance))
                 .collect::<Vec<_>>();
-            let nullifier_old_root = main_gate.assign_integer(
-                pool,
-                self.instances[Self::NULLIFIER_OLD_ROOT_ROW]
-            );
-            let nullifier_new_root = main_gate.assign_integer(
-                pool,
-                self.instances[Self::NULLIFIER_NEW_ROOT_ROW]
-            );
-            let membership_root = main_gate.assign_integer(
-                pool,
-                self.instances[Self::MEMBERSHIP_ROOT_ROW]
-            );
+            let nullifier_old_root =
+                main_gate.assign_integer(pool, self.instances[Self::NULLIFIER_OLD_ROOT_ROW]);
+            let nullifier_new_root =
+                main_gate.assign_integer(pool, self.instances[Self::NULLIFIER_NEW_ROOT_ROW]);
+            let membership_root =
+                main_gate.assign_integer(pool, self.instances[Self::MEMBERSHIP_ROOT_ROW]);
             let proposal_id = main_gate.assign_integer(pool, self.instances[Self::PROPOSAL_ID_ROW]);
             let round = main_gate.assign_integer(pool, self.instances[Self::ROUND_ROW]);
 
@@ -603,23 +569,15 @@ pub mod recursion {
             let ecc_chip = BaseFieldEccChip::new(&fp_chip);
             let loader = Halo2Loader::new(ecc_chip, mem::take(self.inner.pool(0)));
 
-            let (mut voter_instances, voter_accumulators) = succinct_verify(
-                &self.svk,
-                &loader,
-                &self.voter,
-                None
-            );
-            let (mut state_transition_instances, state_transition_accumulators) = succinct_verify(
-                &self.svk,
-                &loader,
-                &self.state_transition,
-                None
-            );
+            let (mut voter_instances, voter_accumulators) =
+                succinct_verify(&self.svk, &loader, &self.voter, None);
+            let (mut state_transition_instances, state_transition_accumulators) =
+                succinct_verify(&self.svk, &loader, &self.state_transition, None);
             let (mut previous_instances, previous_accumulators) = succinct_verify(
                 &self.svk,
                 &loader,
                 &self.previous,
-                Some(preprocessed_digest)
+                Some(preprocessed_digest),
             );
 
             let default_accmulator = self.load_default_accumulator(&loader).unwrap();
@@ -630,15 +588,21 @@ pub mod recursion {
                         &loader,
                         &first_round,
                         &default_accmulator,
-                        previous_accumulator
-                    ).unwrap()
+                        previous_accumulator,
+                    )
+                    .unwrap()
                 })
                 .collect::<Vec<_>>();
 
             let KzgAccumulator { lhs, rhs } = accumulate(
                 &loader,
-                [voter_accumulators, state_transition_accumulators, previous_accumulators].concat(),
-                self.as_proof()
+                [
+                    voter_accumulators,
+                    state_transition_accumulators,
+                    previous_accumulators,
+                ]
+                .concat(),
+                self.as_proof(),
             );
 
             let lhs = lhs.into_assigned();
@@ -656,7 +620,10 @@ pub mod recursion {
                     &previous_instances[Self::PREPROCESSED_DIGEST_ROW],
                 ),
                 // Verify round is increased by 1 when not at first round
-                (&round, &main_gate.add(ctx, not_first_round, previous_instances[Self::ROUND_ROW])),
+                (
+                    &round,
+                    &main_gate.add(ctx, not_first_round, previous_instances[Self::ROUND_ROW]),
+                ),
             ] {
                 ctx.constrain_equal(lhs, rhs);
             }
@@ -675,7 +642,7 @@ pub mod recursion {
                 // );
                 ctx.constrain_equal(
                     &state_transition_instances[i],
-                    &previous_instances[4 * LIMBS + i + 1]
+                    &previous_instances[4 * LIMBS + i + 1],
                 );
             }
 
@@ -687,7 +654,7 @@ pub mod recursion {
                 // );
                 ctx.constrain_equal(
                     &state_transition_instances[i + 4],
-                    &previous_instances[4 * LIMBS + i + 1 + 4]
+                    &previous_instances[4 * LIMBS + i + 1 + 4],
                 );
             }
 
@@ -706,7 +673,10 @@ pub mod recursion {
                 //     state_transition_instances[i + 64].value(),
                 //     voter_instances[i + 24].value()
                 // );
-                ctx.constrain_equal(&state_transition_instances[i + 64], &voter_instances[i + 24]);
+                ctx.constrain_equal(
+                    &state_transition_instances[i + 64],
+                    &voter_instances[i + 24],
+                );
             }
 
             // state_transition(nullifier_old_root) == previous(nullifier_new_root)
@@ -716,7 +686,7 @@ pub mod recursion {
             // );
             ctx.constrain_equal(
                 &state_transition_instances[68],
-                &previous_instances[4 * LIMBS + 1 + 25]
+                &previous_instances[4 * LIMBS + 1 + 25],
             );
 
             // previous(membership_root]) == voter(membership_root)
@@ -724,14 +694,20 @@ pub mod recursion {
             //     previous_instances[4 * LIMBS + 1 + 26].value(),
             //     voter_instances[28].value()
             // );
-            ctx.constrain_equal(&previous_instances[4 * LIMBS + 1 + 26], &voter_instances[28]);
+            ctx.constrain_equal(
+                &previous_instances[4 * LIMBS + 1 + 26],
+                &voter_instances[28],
+            );
 
             // voter(proposal_id) == previous(proposal_id)
             // assert_eq!(
             //     voter_instances[29].value(),
             //     previous_instances[4 * LIMBS + 1 + 27].value()
             // );
-            ctx.constrain_equal(&voter_instances[29], &previous_instances[4 * LIMBS + 1 + 27]);
+            ctx.constrain_equal(
+                &voter_instances[29],
+                &previous_instances[4 * LIMBS + 1 + 27],
+            );
 
             *self.inner.pool(0) = pool;
 
@@ -750,9 +726,10 @@ pub mod recursion {
                             membership_root,
                             proposal_id,
                             round,
-                        ].iter()
+                        ]
+                        .iter(),
                     )
-                    .copied()
+                    .copied(),
             );
 
             self.inner.calculate_params(Some(10));
@@ -763,17 +740,15 @@ pub mod recursion {
             params: &ParamsKZG<Bn256>,
             vk: Option<&VerifyingKey<G1Affine>>,
             config_params: BaseCircuitParams,
-            init_aggr_instances: Vec<Fr>
+            init_aggr_instances: Vec<Fr>,
         ) -> Snark {
             let mut snark = gen_dummy_snark::<RecursionCircuit>(params, vk, config_params);
             let g = params.get_g();
-            snark.instances = vec![
-                [g[1].x, g[1].y, g[0].x, g[0].y]
-                    .into_iter()
-                    .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-                    .chain(init_aggr_instances)
-                    .collect_vec()
-            ];
+            snark.instances = vec![[g[1].x, g[1].y, g[0].x, g[0].y]
+                .into_iter()
+                .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
+                .chain(init_aggr_instances)
+                .collect_vec()];
             snark
         }
 
@@ -783,16 +758,15 @@ pub mod recursion {
 
         fn load_default_accumulator<'a>(
             &self,
-            loader: &Rc<Halo2Loader<'a>>
+            loader: &Rc<Halo2Loader<'a>>,
         ) -> Result<KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>, Error> {
-            let [lhs, rhs] = [self.default_accumulator.lhs, self.default_accumulator.rhs].map(
-                |default| {
+            let [lhs, rhs] =
+                [self.default_accumulator.lhs, self.default_accumulator.rhs].map(|default| {
                     let assigned = loader
                         .ecc_chip()
                         .assign_constant(&mut loader.ctx_mut(), default);
                     loader.ec_point_from_assigned(assigned)
-                }
-            );
+                });
             Ok(KzgAccumulator::new(lhs, rhs))
         }
 
@@ -816,7 +790,7 @@ pub mod recursion {
 
         fn configure_with_params(
             meta: &mut ConstraintSystem<Fr>,
-            params: Self::Params
+            params: Self::Params,
         ) -> Self::Config {
             BaseCircuitBuilder::configure_with_params(meta, params)
         }
@@ -828,7 +802,7 @@ pub mod recursion {
         fn synthesize(
             &self,
             config: Self::Config,
-            layouter: impl Layouter<Fr>
+            layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
             self.inner.synthesize(config, layouter)
         }
@@ -849,9 +823,8 @@ pub mod recursion {
         }
 
         fn selectors(config: &Self::Config) -> Vec<Selector> {
-            config
-                .gate()
-                .basic_gates[0].iter()
+            config.gate().basic_gates[0]
+                .iter()
                 .map(|gate| gate.q_enable)
                 .collect()
         }
@@ -866,7 +839,7 @@ pub mod recursion {
         voter_config: BaseCircuitParams,
         state_transition_config: BaseCircuitParams,
         recursion_config: BaseCircuitParams,
-        init_aggr_instances: Vec<Fr>
+        init_aggr_instances: Vec<Fr>,
     ) -> ProvingKey<G1Affine> {
         let recursion = RecursionCircuit::new(
             CircuitBuilderStage::Keygen,
@@ -875,16 +848,16 @@ pub mod recursion {
             gen_dummy_snark::<StateTransitionCircuit<Fr>>(
                 state_transition_params,
                 Some(state_transition_vk),
-                state_transition_config
+                state_transition_config,
             ),
             RecursionCircuit::initial_snark(
                 recursion_params,
                 None,
                 recursion_config.clone(),
-                init_aggr_instances
+                init_aggr_instances,
             ),
             0,
-            recursion_config
+            recursion_config,
         );
         // we cannot auto-configure the circuit because dummy_snark must know the configuration beforehand
         // uncomment the following line only in development to test and print out the optimal configuration ahead of time
@@ -899,18 +872,19 @@ pub mod recursion {
         recursion_config: BaseCircuitParams,
         voter_snarks: Vec<Snark>,
         state_transition_snarks: Vec<Snark>,
-        init_aggr_instances: Vec<Fr>
+        init_aggr_instances: Vec<Fr>,
     ) -> Snark {
         let mut previous = RecursionCircuit::initial_snark(
             recursion_params,
             Some(recursion_pk.get_vk()),
             recursion_config.clone(),
-            init_aggr_instances
+            init_aggr_instances,
         );
         for (round, (voter, state_transition)) in voter_snarks
             .into_iter()
             .zip(state_transition_snarks)
-            .enumerate() {
+            .enumerate()
+        {
             let recursion = RecursionCircuit::new(
                 stage,
                 recursion_params,
@@ -918,7 +892,7 @@ pub mod recursion {
                 state_transition,
                 previous,
                 round,
-                recursion_config.clone()
+                recursion_config.clone(),
             );
             println!("Generate recursion snark for round {}", round);
             previous = gen_snark(recursion_params, recursion_pk, recursion);
@@ -929,24 +903,28 @@ pub mod recursion {
 
 #[cfg(test)]
 mod test {
-    use std::{ fs, io::BufReader };
+    use std::{fs, io::BufReader};
 
-    use ark_std::{ end_timer, start_timer };
+    use ark_std::{end_timer, start_timer};
     use halo2_base::{
-        gates::circuit::{ builder::BaseCircuitBuilder, BaseCircuitParams, CircuitBuilderStage },
+        gates::circuit::{builder::BaseCircuitBuilder, BaseCircuitParams, CircuitBuilderStage},
         halo2_proofs::{
-            halo2curves::bn256::{ Fr, G1Affine },
+            halo2curves::bn256::{Fr, G1Affine},
             plonk::ProvingKey,
             poly::commitment::ParamsProver,
         },
         utils::fs::gen_srs,
     };
-    use snark_verifier_sdk::{ snark_verifier::verifier::SnarkVerifier, NativeLoader };
+    use snark_verifier_sdk::{snark_verifier::verifier::SnarkVerifier, NativeLoader};
     use voter::VoterCircuit;
 
     use crate::{state_transition::StateTransitionCircuit, utils::generate_wrapper_circuit_input};
 
-    use super::{ gen_pk, gen_snark, recursion::{ self }, PlonkVerifier, PoseidonTranscript };
+    use super::{
+        gen_pk, gen_snark,
+        recursion::{self},
+        PlonkVerifier, PoseidonTranscript,
+    };
 
     #[test]
     fn test_recursion() {
@@ -976,7 +954,7 @@ mod test {
             voter_pk
                 .write(
                     &mut voter_pk_bytes,
-                    halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked
+                    halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
                 )
                 .unwrap();
             fs::write("../../build/voter_pk.bin", voter_pk_bytes).unwrap();
@@ -984,13 +962,12 @@ mod test {
             println!("Reading voter pk");
             let file = fs::read("../../build/voter_pk.bin").unwrap();
             let voter_pk_reader = &mut BufReader::new(file.as_slice());
-            voter_pk = ProvingKey::<G1Affine>
-                ::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
-                    voter_pk_reader,
-                    halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
-                    voter_config.clone()
-                )
-                .unwrap();
+            voter_pk = ProvingKey::<G1Affine>::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
+                voter_pk_reader,
+                halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
+                voter_config.clone(),
+            )
+            .unwrap();
         }
         println!("Generating voter snark");
         let voter_snark = gen_snark(&voter_params, &voter_pk, voter_circuit);
@@ -1006,7 +983,7 @@ mod test {
         let state_transition_params = gen_srs(15);
         let state_transition_circuit = StateTransitionCircuit::new(
             state_transition_config.clone(),
-            state_transition_input[0].clone()
+            state_transition_input[0].clone(),
         );
         let state_transition_pk: ProvingKey<G1Affine>;
         if GEN_STATE_TRANSITION_PK {
@@ -1016,19 +993,23 @@ mod test {
             state_transition_pk
                 .write(
                     &mut state_transition_pk_bytes,
-                    halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked
+                    halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
                 )
                 .unwrap();
-            fs::write("../../build/state_transition_pk.bin", state_transition_pk_bytes).unwrap();
+            fs::write(
+                "../../build/state_transition_pk.bin",
+                state_transition_pk_bytes,
+            )
+            .unwrap();
         } else {
             println!("Reading state transition pk");
             let file = fs::read("../../build/state_transition_pk.bin").unwrap();
             let state_transition_pk_reader = &mut BufReader::new(file.as_slice());
-            state_transition_pk = ProvingKey::<G1Affine>
-                ::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
+            state_transition_pk =
+                ProvingKey::<G1Affine>::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
                     state_transition_pk_reader,
                     halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
-                    state_transition_config.clone()
+                    state_transition_config.clone(),
                 )
                 .unwrap();
         }
@@ -1036,7 +1017,7 @@ mod test {
         let state_transition_snark = gen_snark(
             &state_transition_params,
             &state_transition_pk,
-            state_transition_circuit
+            state_transition_circuit,
         );
 
         let k = 22;
@@ -1052,19 +1033,20 @@ mod test {
 
         // Init Base Instances
         let mut base_instances = [
-            Fr::zero(), // preprocessed_digest
+            Fr::zero(),                  // preprocessed_digest
             voter_snark.instances[0][0], // pk_enc_n
             voter_snark.instances[0][1],
             voter_snark.instances[0][2], // pk_enc_g
             voter_snark.instances[0][3],
-        ].to_vec();
+        ]
+        .to_vec();
         base_instances.extend(state_transition_snark.instances[0][4..24].iter()); // init_vote
         base_instances.extend([
             state_transition_snark.instances[0][68], // nullifier_old_root
             state_transition_snark.instances[0][68], // nullifier_new_root
-            voter_snark.instances[0][28], // membership_root
-            voter_snark.instances[0][29], // proposal_id
-            Fr::from(0), // round
+            voter_snark.instances[0][28],            // membership_root
+            voter_snark.instances[0][29],            // proposal_id
+            Fr::from(0),                             // round
         ]);
 
         let pk_time = start_timer!(|| "Generate recursion pk");
@@ -1080,13 +1062,13 @@ mod test {
                 voter_config.clone(),
                 state_transition_config.clone(),
                 recursion_config.clone(),
-                base_instances.clone()
+                base_instances.clone(),
             );
             let mut recursion_pk_bytes = Vec::new();
             recursion_pk
                 .write(
                     &mut recursion_pk_bytes,
-                    halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked
+                    halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
                 )
                 .unwrap();
             fs::write("build/recursion_pk.bin", recursion_pk_bytes).unwrap();
@@ -1094,11 +1076,11 @@ mod test {
             println!("Reading recursion pk");
             let file = fs::read("../../build/recursion_pk.bin").unwrap();
             let recursion_pk_reader = &mut BufReader::new(file.as_slice());
-            recursion_pk = ProvingKey::<G1Affine>
-                ::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
+            recursion_pk =
+                ProvingKey::<G1Affine>::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
                     recursion_pk_reader,
                     halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
-                    recursion_config.clone()
+                    recursion_config.clone(),
                 )
                 .unwrap();
         }
@@ -1113,11 +1095,13 @@ mod test {
 
             let state_transition_circuit = StateTransitionCircuit::new(
                 state_transition_config.clone(),
-                state_transition_input[i].clone()
+                state_transition_input[i].clone(),
             );
-            state_transition_snarks.push(
-                gen_snark(&state_transition_params, &state_transition_pk, state_transition_circuit)
-            );
+            state_transition_snarks.push(gen_snark(
+                &state_transition_params,
+                &state_transition_pk,
+                state_transition_circuit,
+            ));
         }
 
         println!("Starting recursion...");
@@ -1129,7 +1113,7 @@ mod test {
             recursion_config,
             voter_snarks,
             state_transition_snarks,
-            base_instances
+            base_instances,
         );
         end_timer!(pf_time);
 
@@ -1138,22 +1122,19 @@ mod test {
                 recursion_params.get_g()[0],
                 recursion_params.g2(),
                 recursion_params.s_g2(),
-            ).into();
-            let mut transcript = PoseidonTranscript::<NativeLoader, _>::new::<0>(
-                final_snark.proof.as_slice()
-            );
+            )
+                .into();
+            let mut transcript =
+                PoseidonTranscript::<NativeLoader, _>::new::<0>(final_snark.proof.as_slice());
             let proof = PlonkVerifier::read_proof(
                 &dk,
                 &final_snark.protocol,
                 &final_snark.instances,
-                &mut transcript
-            ).unwrap();
-            PlonkVerifier::verify(
-                &dk,
-                &final_snark.protocol,
-                &final_snark.instances,
-                &proof
-            ).unwrap();
+                &mut transcript,
+            )
+            .unwrap();
+            PlonkVerifier::verify(&dk, &final_snark.protocol, &final_snark.instances, &proof)
+                .unwrap();
         }
     }
 }

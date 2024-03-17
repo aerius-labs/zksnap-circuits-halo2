@@ -1,2 +1,7 @@
 [workspace]
 members = ["voter", "aggregator"]
+
+# For performance profiling
+[profile.flamegraph]
+inherits = "release"
+debug = true

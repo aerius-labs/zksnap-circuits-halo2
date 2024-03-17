@@ -7,12 +7,15 @@ use aggregator::wrapper::recursion::RecursionCircuit;
 use halo2_base::gates::circuit::BaseCircuitParams;
 use halo2_base::gates::circuit::CircuitBuilderStage;
 use halo2_base::utils::fs::gen_srs;
-use halo2_base::{ halo2_proofs::{ halo2curves::bn256::Fr, plonk::* }, utils::testing::gen_proof };
+use halo2_base::{
+    halo2_proofs::{halo2curves::bn256::Fr, plonk::*},
+    utils::testing::gen_proof,
+};
 
-use criterion::{ criterion_group, criterion_main };
-use criterion::{ BenchmarkId, Criterion };
+use criterion::{criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion};
 
-use pprof::criterion::{ Output, PProfProfiler };
+use pprof::criterion::{Output, PProfProfiler};
 use voter::VoterCircuit;
 
 const K: u32 = 22;
@@ -46,13 +49,13 @@ fn bench(c: &mut Criterion) {
     let state_transition_params = gen_srs(15);
     let state_transition_circuit = StateTransitionCircuit::new(
         state_transition_config.clone(),
-        state_transition_inputs[0].clone()
+        state_transition_inputs[0].clone(),
     );
     let state_transition_pk = gen_pk(&state_transition_params, &state_transition_circuit);
     let state_transition_snark = gen_snark(
         &state_transition_params,
         &state_transition_pk,
-        state_transition_circuit
+        state_transition_circuit,
     );
 
     let recursion_config = BaseCircuitParams {
@@ -67,19 +70,20 @@ fn bench(c: &mut Criterion) {
 
     // Init Base Instances
     let mut base_instances = [
-        Fr::zero(), // preprocessed_digest
+        Fr::zero(),                  // preprocessed_digest
         voter_snark.instances[0][0], // pk_enc_n
         voter_snark.instances[0][1],
         voter_snark.instances[0][2], // pk_enc_g
         voter_snark.instances[0][3],
-    ].to_vec();
+    ]
+    .to_vec();
     base_instances.extend(state_transition_snark.instances[0][4..24].iter()); // init_vote
     base_instances.extend([
         state_transition_snark.instances[0][68], // nullifier_old_root
         state_transition_snark.instances[0][68], // nullifier_new_root
-        voter_snark.instances[0][28], // membership_root
-        voter_snark.instances[0][29], // proposal_id
-        Fr::from(0), // round
+        voter_snark.instances[0][28],            // membership_root
+        voter_snark.instances[0][29],            // proposal_id
+        Fr::from(0),                             // round
     ]);
 
     let recursion_circuit = RecursionCircuit::new(
@@ -89,16 +93,16 @@ fn bench(c: &mut Criterion) {
         gen_dummy_snark::<StateTransitionCircuit<Fr>>(
             &state_transition_params,
             Some(state_transition_pk.get_vk()),
-            state_transition_config
+            state_transition_config,
         ),
         RecursionCircuit::initial_snark(
             &recursion_params,
             None,
             recursion_config.clone(),
-            base_instances.clone()
+            base_instances.clone(),
         ),
         0,
-        recursion_config
+        recursion_config,
     );
     let pk = gen_pk(&recursion_params, &recursion_circuit);
     let config_params = recursion_circuit.inner().params();
@@ -107,7 +111,12 @@ fn bench(c: &mut Criterion) {
     group.sample_size(10);
     group.bench_with_input(
         BenchmarkId::new("wrapper circuit", K),
-        &(&recursion_params, &pk, &voter_snark, &state_transition_snark),
+        &(
+            &recursion_params,
+            &pk,
+            &voter_snark,
+            &state_transition_snark,
+        ),
         |bencher, &(params, pk, voter_snark, state_transition_snark)| {
             let cloned_voter_snark = voter_snark;
             let cloned_state_transition_snark = state_transition_snark;
@@ -122,15 +131,15 @@ fn bench(c: &mut Criterion) {
                         &params,
                         None,
                         cloned_config_params.clone(),
-                        base_instances.clone()
+                        base_instances.clone(),
                     ),
                     0,
-                    cloned_config_params
+                    cloned_config_params,
                 );
 
                 gen_proof(params, pk, circuit);
             })
-        }
+        },
     );
     group.finish()
 }
