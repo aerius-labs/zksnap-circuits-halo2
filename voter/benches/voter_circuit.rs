@@ -1,34 +1,28 @@
-use ark_std::{end_timer, start_timer};
+use ark_std::{ end_timer, start_timer };
 use halo2_base::gates::circuit::BaseCircuitParams;
-use halo2_base::gates::circuit::{builder::RangeCircuitBuilder, CircuitBuilderStage};
+use halo2_base::gates::circuit::{ builder::RangeCircuitBuilder, CircuitBuilderStage };
 use halo2_base::gates::flex_gate::MultiPhaseThreadBreakPoints;
 use halo2_base::AssignedValue;
 use halo2_base::{
-    halo2_proofs::{
-        halo2curves::bn256::{Bn256, Fr},
-        plonk::*,
-        poly::kzg::commitment::ParamsKZG,
-    },
+    halo2_proofs::{ halo2curves::bn256::{ Bn256, Fr }, plonk::*, poly::kzg::commitment::ParamsKZG },
     utils::testing::gen_proof,
 };
-use pprof::criterion::{Output, PProfProfiler};
 use rand::rngs::OsRng;
 
-use criterion::{criterion_group, criterion_main};
-use criterion::{BenchmarkId, Criterion};
+use criterion::{ criterion_group, criterion_main };
+use criterion::{ BenchmarkId, Criterion };
 
-use zksnap_halo2::state_transition_circuit::utils::generate_random_state_transition_circuit_inputs;
-use zksnap_halo2::state_transition_circuit::{state_trans_circuit, StateTranInput};
-// Thanks to the example provided by @jebbow in his article
-// https://www.jibbow.com/posts/criterion-flamegraphs/
+use pprof::criterion::{ Output, PProfProfiler };
+use voter::utils::generate_random_voter_circuit_inputs;
+use voter::{ voter_circuit, VoterCircuitInput };
 
-const K: u32 = 15;
+const K: u32 = 13;
 
-fn state_transition_circuit_bench(
+fn voter_circuit_bench(
     stage: CircuitBuilderStage,
-    input: StateTranInput<Fr>,
+    input: VoterCircuitInput<Fr>,
     config_params: Option<BaseCircuitParams>,
-    break_points: Option<MultiPhaseThreadBreakPoints>,
+    break_points: Option<MultiPhaseThreadBreakPoints>
 ) -> RangeCircuitBuilder<Fr> {
     let k = K as usize;
     let lookup_bits = k - 1;
@@ -36,16 +30,14 @@ fn state_transition_circuit_bench(
         CircuitBuilderStage::Prover => {
             RangeCircuitBuilder::prover(config_params.unwrap(), break_points.unwrap())
         }
-        _ => RangeCircuitBuilder::from_stage(stage)
-            .use_k(k)
-            .use_lookup_bits(lookup_bits),
+        _ => RangeCircuitBuilder::from_stage(stage).use_k(k).use_lookup_bits(lookup_bits),
     };
 
     let start0 = start_timer!(|| format!("Witness generation for circuit in {stage:?} stage"));
     let range = builder.range_chip();
 
     let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
-    state_trans_circuit(builder.main(0), &range, input, &mut public_inputs);
+    voter_circuit(builder.main(0), &range, input, &mut public_inputs);
 
     end_timer!(start0);
     if !stage.witness_gen_only() {
@@ -55,13 +47,8 @@ fn state_transition_circuit_bench(
 }
 
 fn bench(c: &mut Criterion) {
-    let state_transition_input = generate_random_state_transition_circuit_inputs();
-    let circuit = state_transition_circuit_bench(
-        CircuitBuilderStage::Keygen,
-        state_transition_input.clone(),
-        None,
-        None,
-    );
+    let voter_input = generate_random_voter_circuit_inputs();
+    let circuit = voter_circuit_bench(CircuitBuilderStage::Keygen, voter_input.clone(), None, None);
     let config_params = circuit.params();
 
     let params = ParamsKZG::<Bn256>::setup(K, OsRng);
@@ -72,21 +59,21 @@ fn bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("plonk-prover");
     group.sample_size(10);
     group.bench_with_input(
-        BenchmarkId::new("state transition circuit", K),
-        &(&params, &pk, &state_transition_input),
-        |bencher, &(params, pk, state_transition_input)| {
-            let input = state_transition_input.clone();
+        BenchmarkId::new("voter circuit", K),
+        &(&params, &pk, &voter_input),
+        |bencher, &(params, pk, voter_input)| {
+            let input = voter_input.clone();
             bencher.iter(|| {
-                let circuit = state_transition_circuit_bench(
+                let circuit = voter_circuit_bench(
                     CircuitBuilderStage::Prover,
                     input.clone(),
                     Some(config_params.clone()),
-                    Some(break_points.clone()),
+                    Some(break_points.clone())
                 );
 
                 gen_proof(params, pk, circuit);
             })
-        },
+        }
     );
     group.finish()
 }

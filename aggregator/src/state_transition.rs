@@ -1,30 +1,26 @@
-pub mod utils;
-
 use halo2_base::gates::circuit::builder::BaseCircuitBuilder;
-use halo2_base::gates::circuit::{BaseCircuitParams, BaseConfig};
+use halo2_base::gates::circuit::{ BaseCircuitParams, BaseConfig };
 use halo2_base::gates::GateInstructions;
-use halo2_base::halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
-use halo2_base::halo2_proofs::plonk::{Circuit, ConstraintSystem, Error};
-use halo2_base::poseidon::hasher::{spec::OptimizedPoseidonSpec, PoseidonHasher};
-use halo2_base::QuantumCell;
+use halo2_base::halo2_proofs::circuit::{ Layouter, SimpleFloorPlanner };
+use halo2_base::halo2_proofs::plonk::{ Circuit, ConstraintSystem, Error };
+use halo2_base::poseidon::hasher::{ spec::OptimizedPoseidonSpec, PoseidonHasher };
 use halo2_base::{
-    gates::{RangeChip, RangeInstructions},
+    gates::{ RangeChip, RangeInstructions },
     halo2_proofs::circuit::Value,
     utils::BigPrimeField,
-    AssignedValue, Context,
+    AssignedValue,
+    Context,
 };
-use halo2_ecc::bigint::{big_is_even, ProperCrtUint};
-use halo2_ecc::ecc::{EcPoint, EccChip};
+use halo2_ecc::ecc::EccChip;
 use halo2_ecc::fields::fp::FpChip;
-use indexed_merkle_tree_halo2::indexed_merkle_tree::{insert_leaf, IndexedMerkleTreeLeaf};
+use indexed_merkle_tree_halo2::indexed_merkle_tree::{ insert_leaf, IndexedMerkleTreeLeaf };
 use indexed_merkle_tree_halo2::utils::IndexedMerkleTreeLeaf as IMTLeaf;
 use num_bigint::BigUint;
 
-use crate::voter_circuit::EncryptionPublicKey;
-use crate::wrapper_circuit::common::CircuitExt;
 use biguint_halo2::big_uint::chip::BigUintChip;
-use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp, Secp256k1Affine};
-use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
+use halo2_base::halo2_proofs::halo2curves::secp256k1::{ Fp, Secp256k1Affine };
+use paillier_chip::paillier::{ EncryptionPublicKeyAssigned, PaillierChip };
+use voter::{ compress_nullifier, CircuitExt, EncryptionPublicKey };
 
 const ENC_BIT_LEN: usize = 176;
 const LIMB_BIT_LEN: usize = 88;
@@ -32,7 +28,7 @@ const LIMB_BIT_LEN: usize = 88;
 //TODO: Constrain the nullifier hash using x and y limbs
 
 #[derive(Debug, Clone)]
-pub struct IndexTreeInput<F: BigPrimeField> {
+pub struct IndexedMerkleTreeInput<F: BigPrimeField> {
     old_root: F,
     low_leaf: IMTLeaf<F>,
     low_leaf_proof: Vec<F>,
@@ -44,7 +40,8 @@ pub struct IndexTreeInput<F: BigPrimeField> {
     new_leaf_proof_helper: Vec<F>,
     is_new_leaf_largest: F,
 }
-impl<F: BigPrimeField> IndexTreeInput<F> {
+
+impl<F: BigPrimeField> IndexedMerkleTreeInput<F> {
     pub fn new(
         old_root: F,
         low_leaf: IMTLeaf<F>,
@@ -55,7 +52,7 @@ impl<F: BigPrimeField> IndexTreeInput<F> {
         new_leaf_index: F,
         new_leaf_proof: Vec<F>,
         new_leaf_proof_helper: Vec<F>,
-        is_new_leaf_largest: F,
+        is_new_leaf_largest: F
     ) -> Self {
         Self {
             old_root,
@@ -73,20 +70,20 @@ impl<F: BigPrimeField> IndexTreeInput<F> {
 }
 
 #[derive(Debug, Clone)]
-pub struct StateTranInput<F: BigPrimeField> {
+pub struct StateTransitionInput<F: BigPrimeField> {
     pub pk_enc: EncryptionPublicKey,
     pub incoming_vote: Vec<BigUint>,
     pub prev_vote: Vec<BigUint>,
-    pub nullifier_tree: IndexTreeInput<F>,
+    pub nullifier_tree: IndexedMerkleTreeInput<F>,
     pub nullifier: Secp256k1Affine,
 }
-impl<F: BigPrimeField> StateTranInput<F> {
+impl<F: BigPrimeField> StateTransitionInput<F> {
     pub fn new(
         pk_enc: EncryptionPublicKey,
         incoming_vote: Vec<BigUint>,
         prev_vote: Vec<BigUint>,
-        nullifier_tree: IndexTreeInput<F>,
-        nullifier: Secp256k1Affine,
+        nullifier_tree: IndexedMerkleTreeInput<F>,
+        nullifier: Secp256k1Affine
     ) -> Self {
         Self {
             pk_enc,
@@ -97,38 +94,12 @@ impl<F: BigPrimeField> StateTranInput<F> {
         }
     }
 }
-pub fn compress_nullifier<F: BigPrimeField>(
+
+pub fn state_transition_circuit<F: BigPrimeField>(
     ctx: &mut Context<F>,
     range: &RangeChip<F>,
-    nullifier: &EcPoint<F, ProperCrtUint<F>>,
-) -> Vec<AssignedValue<F>> {
-    let mut compressed_pt = Vec::<AssignedValue<F>>::with_capacity(4);
-
-    let is_y_even = big_is_even::positive(
-        range,
-        ctx,
-        nullifier.y().as_ref().truncation.clone(),
-        LIMB_BIT_LEN,
-    );
-
-    let tag = range.gate().select(
-        ctx,
-        QuantumCell::Constant(F::from(2u64)),
-        QuantumCell::Constant(F::from(3u64)),
-        is_y_even,
-    );
-
-    compressed_pt.push(tag);
-    compressed_pt.extend(nullifier.x().limbs().to_vec());
-
-    compressed_pt
-}
-
-pub fn state_trans_circuit<F: BigPrimeField>(
-    ctx: &mut Context<F>,
-    range: &RangeChip<F>,
-    input: StateTranInput<F>,
-    public_inputs: &mut Vec<AssignedValue<F>>,
+    input: StateTransitionInput<F>,
+    public_inputs: &mut Vec<AssignedValue<F>>
 ) {
     let gate = range.gate();
     let mut hasher = PoseidonHasher::<F, 3, 2>::new(OptimizedPoseidonSpec::new::<8, 57, 0>());
@@ -157,22 +128,16 @@ pub fn state_trans_circuit<F: BigPrimeField>(
         g: g_assigned,
     };
 
-    let incoming_vote = input
-        .incoming_vote
+    let incoming_vote = input.incoming_vote
         .iter()
         .map(|x| {
-            biguint_chip
-                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2)
-                .unwrap()
+            biguint_chip.assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2).unwrap()
         })
         .collect::<Vec<_>>();
-    let prev_vote = input
-        .prev_vote
+    let prev_vote = input.prev_vote
         .iter()
         .map(|x| {
-            biguint_chip
-                .assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2)
-                .unwrap()
+            biguint_chip.assign_integer(ctx, Value::known(x.clone()), ENC_BIT_LEN * 2).unwrap()
         })
         .collect::<Vec<_>>();
 
@@ -204,27 +169,19 @@ pub fn state_trans_circuit<F: BigPrimeField>(
     let new_leaf_index = ctx.load_witness(input.nullifier_tree.new_leaf_index);
     let is_new_leaf_largest = ctx.load_witness(input.nullifier_tree.is_new_leaf_largest);
 
-    let low_leaf_proof = input
-        .nullifier_tree
-        .low_leaf_proof
+    let low_leaf_proof = input.nullifier_tree.low_leaf_proof
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let low_leaf_proof_helper = input
-        .nullifier_tree
-        .low_leaf_proof_helper
+    let low_leaf_proof_helper = input.nullifier_tree.low_leaf_proof_helper
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let new_leaf_proof = input
-        .nullifier_tree
-        .new_leaf_proof
+    let new_leaf_proof = input.nullifier_tree.new_leaf_proof
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
-    let new_leaf_proof_helper = input
-        .nullifier_tree
-        .new_leaf_proof_helper
+    let new_leaf_proof_helper = input.nullifier_tree.new_leaf_proof_helper
         .iter()
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
@@ -242,7 +199,7 @@ pub fn state_trans_circuit<F: BigPrimeField>(
         &new_leaf_index,
         &new_leaf_proof,
         &new_leaf_proof_helper,
-        &is_new_leaf_largest,
+        &is_new_leaf_largest
     );
 
     // PK_ENC N
@@ -277,12 +234,12 @@ pub fn state_trans_circuit<F: BigPrimeField>(
 }
 
 pub struct StateTransitionCircuit<F: BigPrimeField> {
-    input: StateTranInput<F>,
+    input: StateTransitionInput<F>,
     pub inner: BaseCircuitBuilder<F>,
 }
 
 impl<F: BigPrimeField> StateTransitionCircuit<F> {
-    pub fn new(config: BaseCircuitParams, input: StateTranInput<F>) -> Self {
+    pub fn new(config: BaseCircuitParams, input: StateTransitionInput<F>) -> Self {
         let mut inner = BaseCircuitBuilder::default();
         inner.set_params(config);
 
@@ -290,7 +247,7 @@ impl<F: BigPrimeField> StateTransitionCircuit<F> {
         let ctx = inner.main(0);
 
         let mut public_inputs = Vec::<AssignedValue<F>>::new();
-        state_trans_circuit(ctx, &range, input.clone(), &mut public_inputs);
+        state_transition_circuit(ctx, &range, input.clone(), &mut public_inputs);
         inner.assigned_instances[0].extend(public_inputs);
         inner.calculate_params(Some(10));
         Self { input, inner }
@@ -329,26 +286,31 @@ impl<F: BigPrimeField> CircuitExt<F> for StateTransitionCircuit<F> {
     }
 
     fn instances(&self) -> Vec<Vec<F>> {
-        vec![self.inner.assigned_instances[0]
-            .iter()
-            .map(|instance| *instance.value())
-            .collect()]
+        vec![
+            self.inner.assigned_instances[0]
+                .iter()
+                .map(|instance| *instance.value())
+                .collect()
+        ]
     }
 }
 
 #[cfg(test)]
 mod test {
-    use halo2_base::{gates::circuit::BaseCircuitParams, halo2_proofs::dev::MockProver};
-
-    use crate::wrapper_circuit::{common::CircuitExt, utils::generate_wrapper_circuit_input};
-
-    use super::{
-        state_trans_circuit, utils::generate_random_state_transition_circuit_inputs,
-        StateTransitionCircuit,
+    use halo2_base::{
+        gates::circuit::BaseCircuitParams,
+        halo2_proofs::{ dev::MockProver, halo2curves::bn256::Fr },
+        utils::testing::base_test,
+        AssignedValue,
     };
+    use voter::CircuitExt;
+
+    use crate::utils::generate_wrapper_circuit_input;
+
+    use super::{ state_transition_circuit, StateTransitionCircuit };
 
     #[test]
-    fn test_state_trans_circuit() {
+    fn test_state_transition_circuit() {
         let (_, multiple_input) = generate_wrapper_circuit_input(4);
 
         let config = BaseCircuitParams {
@@ -368,13 +330,13 @@ mod test {
             prover.verify().unwrap();
         }
 
-        // base_test()
-        //     .k(19)
-        //     .lookup_bits(18)
-        //     .expect_satisfied(true)
-        //     .run(|ctx, range| {
-        //         let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
-        //         state_trans_circuit(ctx, range, input, &mut public_inputs)
-        //     });
+        base_test()
+            .k(19)
+            .lookup_bits(18)
+            .expect_satisfied(true)
+            .run(|ctx, range| {
+                let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
+                state_transition_circuit(ctx, range, multiple_input[0].clone(), &mut public_inputs)
+            });
     }
 }

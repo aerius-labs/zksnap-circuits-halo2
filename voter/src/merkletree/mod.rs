@@ -1,11 +1,11 @@
+pub mod native;
+
 use halo2_base::{
     gates::{GateChip, GateInstructions},
     poseidon::hasher::PoseidonHasher,
     utils::BigPrimeField,
     AssignedValue, Context,
 };
-
-pub mod native;
 
 pub fn dual_mux<F: BigPrimeField>(
     ctx: &mut Context<F>,

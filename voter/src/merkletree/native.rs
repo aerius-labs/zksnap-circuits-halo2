@@ -2,14 +2,14 @@ use halo2_base::utils::BigPrimeField;
 use pse_poseidon::Poseidon;
 
 #[derive(Debug)]
-pub(crate) struct MerkleTree<'a, F: BigPrimeField, const T: usize, const RATE: usize> {
+pub struct MerkleTree<'a, F: BigPrimeField, const T: usize, const RATE: usize> {
     hash: &'a mut Poseidon<F, T, RATE>,
     tree: Vec<Vec<F>>,
     root: F,
 }
 
 impl<'a, F: BigPrimeField, const T: usize, const RATE: usize> MerkleTree<'a, F, T, RATE> {
-    pub(crate) fn new(
+    pub fn new(
         hash: &'a mut Poseidon<F, T, RATE>,
         leaves: Vec<F>,
     ) -> Result<MerkleTree<'a, F, T, RATE>, &'static str> {
@@ -48,11 +48,11 @@ impl<'a, F: BigPrimeField, const T: usize, const RATE: usize> MerkleTree<'a, F, 
         })
     }
 
-    pub(crate) fn get_root(&self) -> F {
+    pub fn get_root(&self) -> F {
         self.root
     }
 
-    pub(crate) fn get_proof(&self, index: usize) -> (Vec<F>, Vec<F>) {
+    pub fn get_proof(&self, index: usize) -> (Vec<F>, Vec<F>) {
         let mut proof = Vec::new();
         let mut proof_helper = Vec::new();
         let mut current_index = index;
@@ -76,7 +76,7 @@ impl<'a, F: BigPrimeField, const T: usize, const RATE: usize> MerkleTree<'a, F, 
         (proof, proof_helper)
     }
 
-    pub(crate) fn verify_proof(&mut self, leaf: &F, index: usize, root: &F, proof: &[F]) -> bool {
+    pub fn verify_proof(&mut self, leaf: &F, index: usize, root: &F, proof: &[F]) -> bool {
         let mut computed_hash = *leaf;
         let mut current_index = index;
 
