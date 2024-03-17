@@ -903,6 +903,7 @@ pub mod recursion {
 
 #[cfg(test)]
 mod test {
+    use std::path::{Path, PathBuf};
     use std::{fs, io::BufReader};
 
     use ark_std::{end_timer, start_timer};
@@ -925,6 +926,18 @@ mod test {
         recursion::{self},
         PlonkVerifier, PoseidonTranscript,
     };
+
+    fn workspace_dir() -> PathBuf {
+        let output = std::process::Command::new(env!("CARGO"))
+            .arg("locate-project")
+            .arg("--workspace")
+            .arg("--message-format=plain")
+            .output()
+            .unwrap()
+            .stdout;
+        let cargo_path = Path::new(std::str::from_utf8(&output).unwrap().trim());
+        cargo_path.parent().unwrap().to_path_buf()
+    }
 
     #[test]
     fn test_recursion() {
@@ -957,7 +970,11 @@ mod test {
                     halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
                 )
                 .unwrap();
-            fs::write("../../build/voter_pk.bin", voter_pk_bytes).unwrap();
+            // write voter pk to build folder and make sure folder exists
+            let wsd = workspace_dir();
+            let build_dir = wsd.join("build");
+            fs::create_dir_all(&build_dir).unwrap();
+            fs::write(build_dir.join("voter_pk.bin"), voter_pk_bytes).unwrap();
         } else {
             println!("Reading voter pk");
             let file = fs::read("../../build/voter_pk.bin").unwrap();
@@ -996,8 +1013,12 @@ mod test {
                     halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
                 )
                 .unwrap();
+
+            let wsd = workspace_dir();
+            let build_dir = wsd.join("build");
+            fs::create_dir_all(&build_dir).unwrap();
             fs::write(
-                "../../build/state_transition_pk.bin",
+                build_dir.join("state_transition_pk.bin"),
                 state_transition_pk_bytes,
             )
             .unwrap();
@@ -1071,7 +1092,11 @@ mod test {
                     halo2_base::halo2_proofs::SerdeFormat::RawBytesUnchecked,
                 )
                 .unwrap();
-            fs::write("build/recursion_pk.bin", recursion_pk_bytes).unwrap();
+
+            let wsd = workspace_dir();
+            let build_dir = wsd.join("build");
+            fs::create_dir_all(&build_dir).unwrap();
+            fs::write(build_dir.join("recursion_pk.bin"), recursion_pk_bytes).unwrap();
         } else {
             println!("Reading recursion pk");
             let file = fs::read("../../build/recursion_pk.bin").unwrap();
