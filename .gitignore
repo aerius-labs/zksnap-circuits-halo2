@@ -1,5 +1,8 @@
-.vscode/
 /target
 /Cargo.lock
 /build
 **/params
+
+# IDEs
+.vscode/
+.idea
