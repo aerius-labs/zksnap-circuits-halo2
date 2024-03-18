@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-halo2-base = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve", default-features = false, features = ["halo2-axiom", "display"] }
-halo2-ecc = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve", default-features = false, features = ["halo2-axiom"] }
+halo2-base = { git = "https://github.com/aerius-labs/halo2-lib.git", branch = "feat/secp256k1-hash2curve", default-features = false, features = ["halo2-axiom", "display"] }
+halo2-ecc = { git = "https://github.com/aerius-labs/halo2-lib.git", branch = "feat/secp256k1-hash2curve", default-features = false, features = ["halo2-axiom"] }
 biguint-halo2 = { git = "https://github.com/aerius-labs/biguint-halo2" }
 paillier-chip = { git = "https://github.com/aerius-labs/paillier-halo2.git" }
-plume-halo2 = { git = "https://github.com/shreyas-londhe/zk-nullifier-sig.git", rev = "2e8c8c9" }
+plume-halo2 = { git = "https://github.com/aerius-labs/zk-nullifier-sig.git", branch = "feat/plume-halo2" }
 pse-poseidon = { git = "https://github.com/aerius-labs/pse-poseidon.git", branch = "feat/stateless-hash" }
 num-bigint = { version = "0.4.4", features = ["serde"] }
 itertools = "0.12.0"
