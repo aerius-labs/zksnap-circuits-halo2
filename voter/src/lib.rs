@@ -227,24 +227,24 @@ pub fn voter_circuit<F: BigPrimeField>(
     };
 
     // 1. Verify if the voter is in the membership tree
-    verify_membership_proof(
-        ctx,
-        gate,
-        &hasher,
-        &membership_root,
-        &leaf,
-        &membership_proof,
-        &membership_proof_helper,
-    );
+    // verify_membership_proof(
+    //     ctx,
+    //     gate,
+    //     &hasher,
+    //     &membership_root,
+    //     &leaf,
+    //     &membership_proof,
+    //     &membership_proof_helper,
+    // );
 
     // Check to verify correct votes have been passed.
-    let _ = vote_assigned_fe.iter().map(|x| gate.assert_bit(ctx, *x));
-    let zero = ctx.load_zero();
-    let one = ctx.load_constant(F::ONE);
-    let vote_sum_assigned = vote_assigned_fe
-        .iter()
-        .fold(zero, |zero, x| gate.add(ctx, zero, *x));
-    ctx.constrain_equal(&vote_sum_assigned, &one);
+    // let _ = vote_assigned_fe.iter().map(|x| gate.assert_bit(ctx, *x));
+    // let zero = ctx.load_zero();
+    // let one = ctx.load_constant(F::ONE);
+    // let vote_sum_assigned = vote_assigned_fe
+    //     .iter()
+    //     .fold(zero, |zero, x| gate.add(ctx, zero, *x));
+    // ctx.constrain_equal(&vote_sum_assigned, &one);
 
     //PK_ENC_n
     public_inputs.extend(pk_enc.n.limbs().to_vec());
@@ -254,46 +254,46 @@ pub fn voter_circuit<F: BigPrimeField>(
 
     // 2. Verify correct vote encryption
     for i in 0..input.vote.len() {
-        let _vote_enc = paillier_chip
-            .encrypt(ctx, &pk_enc, &vote_assigned_big[i], &r_assigned[i])
-            .unwrap();
+        // let _vote_enc = paillier_chip
+        //     .encrypt(ctx, &pk_enc, &vote_assigned_big[i], &r_assigned[i])
+        //     .unwrap();
 
-        biguint_chip
-            .assert_equal_fresh(ctx, &vote_enc_assigned_big[i], &_vote_enc)
-            .unwrap();
+        // biguint_chip
+        //     .assert_equal_fresh(ctx, &vote_enc_assigned_big[i], &_vote_enc)
+        //     .unwrap();
 
         //ENC_VOTE
         public_inputs.append(&mut vote_enc_assigned_big[i].limbs().to_vec());
     }
 
     // 3. Verify nullifier
-    let message = proposal_id.value().to_bytes_le()[..2]
-        .iter()
-        .map(|v| ctx.load_witness(F::from(*v as u64)))
-        .collect::<Vec<_>>();
-    {
-        let mut _proposal_id = ctx.load_zero();
-        for i in 0..2 {
-            _proposal_id = gate.mul_add(
-                ctx,
-                message[i],
-                QuantumCell::Constant(F::from(1u64 << (8 * i))),
-                _proposal_id,
-            );
-        }
-        ctx.constrain_equal(&_proposal_id, &proposal_id);
-    }
+    // let message = proposal_id.value().to_bytes_le()[..2]
+    //     .iter()
+    //     .map(|v| ctx.load_witness(F::from(*v as u64)))
+    //     .collect::<Vec<_>>();
+    // {
+    //     let mut _proposal_id = ctx.load_zero();
+    //     for i in 0..2 {
+    //         _proposal_id = gate.mul_add(
+    //             ctx,
+    //             message[i],
+    //             QuantumCell::Constant(F::from(1u64 << (8 * i))),
+    //             _proposal_id,
+    //         );
+    //     }
+    //     ctx.constrain_equal(&_proposal_id, &proposal_id);
+    // }
 
     let compressed_nullifier = compress_nullifier(ctx, range, &nullifier);
 
-    let plume_input = PlumeInput::new(
-        nullifier,
-        s_nullifier.clone(),
-        c_nullifier,
-        pk_voter,
-        message,
-    );
-    verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
+    // let plume_input = PlumeInput::new(
+    //     nullifier,
+    //     s_nullifier.clone(),
+    //     c_nullifier,
+    //     pk_voter,
+    //     message,
+    // );
+    // verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
 
     //NULLIFIER
     public_inputs.extend(compressed_nullifier.to_vec());

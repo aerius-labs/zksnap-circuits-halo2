@@ -945,7 +945,7 @@ mod test {
         const GEN_STATE_TRANSITION_PK: bool = true;
         const GEN_RECURSION_PK: bool = true;
 
-        let num_round = 3;
+        let num_round = 7;
 
         let (voter_input, state_transition_input) = generate_wrapper_circuit_input(num_round);
 
@@ -960,6 +960,9 @@ mod test {
         let voter_params = gen_srs(15);
         let voter_circuit = VoterCircuit::new(voter_config.clone(), voter_input[0].clone());
         let voter_pk: ProvingKey<G1Affine>;
+        let wsd = workspace_dir();
+        let build_dir = wsd.join("build");
+        fs::create_dir_all(&build_dir).unwrap();
         if GEN_VOTER_PK {
             println!("Generating voter pk");
             voter_pk = gen_pk(&voter_params, &voter_circuit);
@@ -971,13 +974,10 @@ mod test {
                 )
                 .unwrap();
             // write voter pk to build folder and make sure folder exists
-            let wsd = workspace_dir();
-            let build_dir = wsd.join("build");
-            fs::create_dir_all(&build_dir).unwrap();
             fs::write(build_dir.join("voter_pk.bin"), voter_pk_bytes).unwrap();
         } else {
             println!("Reading voter pk");
-            let file = fs::read("../../build/voter_pk.bin").unwrap();
+            let file = fs::read(build_dir.join("voter_pk.bin")).unwrap();
             let voter_pk_reader = &mut BufReader::new(file.as_slice());
             voter_pk = ProvingKey::<G1Affine>::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
                 voter_pk_reader,
@@ -1014,9 +1014,6 @@ mod test {
                 )
                 .unwrap();
 
-            let wsd = workspace_dir();
-            let build_dir = wsd.join("build");
-            fs::create_dir_all(&build_dir).unwrap();
             fs::write(
                 build_dir.join("state_transition_pk.bin"),
                 state_transition_pk_bytes,
@@ -1024,7 +1021,7 @@ mod test {
             .unwrap();
         } else {
             println!("Reading state transition pk");
-            let file = fs::read("../../build/state_transition_pk.bin").unwrap();
+            let file = fs::read(build_dir.join("state_transition_pk.bin")).unwrap();
             let state_transition_pk_reader = &mut BufReader::new(file.as_slice());
             state_transition_pk =
                 ProvingKey::<G1Affine>::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
@@ -1093,13 +1090,10 @@ mod test {
                 )
                 .unwrap();
 
-            let wsd = workspace_dir();
-            let build_dir = wsd.join("build");
-            fs::create_dir_all(&build_dir).unwrap();
             fs::write(build_dir.join("recursion_pk.bin"), recursion_pk_bytes).unwrap();
         } else {
             println!("Reading recursion pk");
-            let file = fs::read("../../build/recursion_pk.bin").unwrap();
+            let file = fs::read(build_dir.join("recursion_pk.bin")).unwrap();
             let recursion_pk_reader = &mut BufReader::new(file.as_slice());
             recursion_pk =
                 ProvingKey::<G1Affine>::read::<BufReader<&[u8]>, BaseCircuitBuilder<Fr>>(
