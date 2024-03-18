@@ -17,7 +17,7 @@ use criterion::{criterion_group, criterion_main};
 use criterion::{BenchmarkId, Criterion};
 
 use pprof::criterion::{Output, PProfProfiler};
-use voter::utils::generate_random_voter_circuit_inputs;
+use voter_tests::generate_random_voter_circuit_inputs;
 use voter::{voter_circuit, VoterCircuitInput};
 
 const K: u32 = 13;
