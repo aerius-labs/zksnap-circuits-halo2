@@ -62,6 +62,7 @@ type PoseidonTranscript<L, S> =
 pub mod common {
     use super::*;
     use halo2_proofs::{plonk::verify_proof, poly::commitment::Params};
+    use serde::{Deserialize, Serialize};
     use snark_verifier_sdk::snark_verifier::{
         cost::CostEstimation, util::transcript::TranscriptWrite,
     };
@@ -77,7 +78,7 @@ pub mod common {
         hasher.squeeze()
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Serialize, Deserialize)]
     pub struct Snark {
         pub protocol: PlonkProtocol<G1Affine>,
         pub instances: Vec<Vec<Fr>>,
