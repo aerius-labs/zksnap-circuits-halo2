@@ -6,20 +6,22 @@ edition = "2021"
 [dependencies]
 halo2-base = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve", default-features = false, features = ["halo2-axiom", "display"] }
 halo2-ecc = { git = "https://github.com/shreyas-londhe/halo2-lib.git", branch = "feat/secp256k1-hash2curve", default-features = false, features = ["halo2-axiom"] }
-itertools = "0.12.0"
-num-bigint = { version = "0.4.4", features = ["serde"] }
 biguint-halo2 = { git = "https://github.com/aerius-labs/biguint-halo2" }
 paillier-chip = { git = "https://github.com/aerius-labs/paillier-halo2.git" }
 plume-halo2 = { git = "https://github.com/shreyas-londhe/zk-nullifier-sig.git", rev = "2e8c8c9" }
-serde ="1.0.196"
-k256 = { version = "0.13.3", features = ["arithmetic", "hash2curve", "expose-field", "sha2"]}
 pse-poseidon = { git = "https://github.com/aerius-labs/pse-poseidon.git", branch = "feat/stateless-hash" }
+num-bigint = { version = "0.4.4", features = ["serde"] }
+itertools = "0.12.0"
+serde ="1.0.196"
+
+[dev-dependencies]
+criterion = "0.5.1"
+pprof = { version = "0.13", features = ["criterion", "flamegraph"] }
+k256 = { version = "0.13.3", features = ["arithmetic", "hash2curve", "expose-field", "sha2"]}
 rand = "0.8.5"
 sha2 = "0.10.8"
-pprof = { version = "0.13", features = ["criterion", "flamegraph"] }
-criterion = "0.5.1"
-criterion-macro = "0.4"
 ark-std = "0.4.0"
+voter-tests = { path = "../voter_tests" }
 
 [[bench]]
 name = "voter_circuit"
