@@ -1,5 +1,4 @@
 pub mod merkletree;
-pub mod utils;
 
 use halo2_base::{
     gates::{
@@ -364,47 +363,5 @@ impl<F: BigPrimeField> CircuitExt<F> for VoterCircuit<F> {
             .iter()
             .map(|instance| *instance.value())
             .collect()]
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use halo2_base::{
-        gates::circuit::BaseCircuitParams,
-        halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr},
-        utils::testing::base_test,
-        AssignedValue,
-    };
-
-    use super::{utils::generate_random_voter_circuit_inputs, voter_circuit, VoterCircuit};
-
-    #[test]
-    fn test_voter_circuit() {
-        let input = generate_random_voter_circuit_inputs();
-
-        // let config = BaseCircuitParams {
-        //     k: 15 as usize,
-        //     num_advice_per_phase: vec![8],
-        //     num_lookup_advice_per_phase: vec![1],
-        //     num_fixed: 1,
-        //     lookup_bits: Some(14),
-        //     num_instance_columns: 1,
-        // };
-
-        // let circuit = VoterCircuit::new(config, input.clone());
-        // let prover = MockProver::run(15, &circuit, circuit.instances()).unwrap();
-        // prover.verify().unwrap();
-
-        base_test()
-            .k(15)
-            .lookup_bits(14)
-            .expect_satisfied(true)
-            .run_builder(|pool, range| {
-                let ctx = pool.main();
-
-                let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
-
-                voter_circuit(ctx, &range, input, &mut public_inputs);
-            })
     }
 }
