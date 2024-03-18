@@ -22,7 +22,9 @@ snark-verifier-sdk = { git = "https://github.com/aerius-labs/snark-verifier.git"
 ark-std = "0.4.0"
 
 voter = { path = "../voter" }
+voter-tests = { path = "../voter_tests" }
 
+[dev-dependencies]
 pprof = { version = "0.13", features = ["criterion", "flamegraph"] }
 criterion = "0.5.1"
 criterion-macro = "0.4"
