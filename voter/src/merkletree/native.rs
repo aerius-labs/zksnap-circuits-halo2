@@ -97,4 +97,22 @@ impl<'a, F: BigPrimeField, const T: usize, const RATE: usize> MerkleTree<'a, F, 
 
         computed_hash == *root
     }
+     pub fn get_leaf_proof(self, leaf: &F) -> (Vec<F>, Vec<F>) {
+        for node in self.tree[0].clone() {
+            if node == *leaf {
+                let index = self.tree[0]
+                    .iter()
+                    .position(|x| x == leaf)
+                    .unwrap();
+                return self.get_proof(index);
+            }
+        }
+        assert!(false, "Leaf not found");
+        (vec![], vec![])
+    }
+
+    pub fn get_tree(&self) -> Vec<Vec<F>> {
+        self.tree.clone()
+    }
+
 }
