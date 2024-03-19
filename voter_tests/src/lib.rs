@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use voter::merkletree::native::MerkleTree;
 use voter::{voter_circuit, EncryptionPublicKey, VoterCircuitInput};
 
-fn compress_point(point: &Secp256k1Affine) -> [u8; 33] {
+pub fn compress_point(point: &Secp256k1Affine) -> [u8; 33] {
     let mut x = point.x.to_bytes();
     x.reverse();
     let y_is_odd = if point.y.is_odd().unwrap_u8() == 1u8 {
