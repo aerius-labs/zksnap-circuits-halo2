@@ -30,7 +30,7 @@ use num_bigint::BigUint;
 use biguint_halo2::big_uint::chip::BigUintChip;
 use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
 use plume_halo2::plume::{verify_plume, PlumeInput};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const ENC_BIT_LEN: usize = 176;
 const LIMB_BIT_LEN: usize = 88;
@@ -41,7 +41,7 @@ const RATE: usize = 2;
 const R_F: usize = 8;
 const R_P: usize = 57;
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EncryptionPublicKey {
     pub n: BigUint,
     pub g: BigUint,
