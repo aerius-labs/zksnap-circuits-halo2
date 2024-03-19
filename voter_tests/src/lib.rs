@@ -19,7 +19,7 @@ use rand::thread_rng;
 use sha2::{Digest, Sha256};
 
 use voter::merkletree::native::MerkleTree;
-use voter::{EncryptionPublicKey, voter_circuit, VoterCircuitInput};
+use voter::{voter_circuit, EncryptionPublicKey, VoterCircuitInput};
 
 fn compress_point(point: &Secp256k1Affine) -> [u8; 33] {
     let mut x = point.x.to_bytes();
@@ -41,8 +41,8 @@ pub fn hash_to_curve(message: &[u8], compressed_pk: &[u8; 33]) -> Secp256k1Affin
         &[[message, compressed_pk].concat().as_slice()],
         &[b"QUUX-V01-CS02-with-secp256k1_XMD:SHA-256_SSWU_RO_"],
     )
-        .unwrap()
-        .to_affine();
+    .unwrap()
+    .to_affine();
     let hashed_to_curve = hashed_to_curve
         .to_encoded_point(false)
         .to_bytes()
@@ -58,7 +58,7 @@ pub fn hash_to_curve(message: &[u8], compressed_pk: &[u8; 33]) -> Secp256k1Affin
         Fp::from_bytes_le(x.as_slice()),
         Fp::from_bytes_le(y.as_slice()),
     )
-        .unwrap()
+    .unwrap()
 }
 
 pub fn verify_nullifier(
@@ -83,7 +83,7 @@ pub fn verify_nullifier(
             compress_point(&gs_pkc),
             compress_point(&hashed_to_curve_s_nullifier_c),
         ]
-            .concat(),
+        .concat(),
     );
 
     let mut _c = sha_hasher.finalize();
@@ -115,7 +115,7 @@ pub fn gen_test_nullifier(sk: &Fq, message: &[u8]) -> (Secp256k1Affine, Fq, Fq) 
             compress_point(&g_r),
             compress_point(&hashed_to_curve_r),
         ]
-            .concat(),
+        .concat(),
     );
 
     let mut c = sha_hasher.finalize();
@@ -234,8 +234,8 @@ mod test {
         AssignedValue,
     };
 
+    use super::generate_random_voter_circuit_inputs;
     use voter::voter_circuit;
-    use super::{generate_random_voter_circuit_inputs};
 
     #[test]
     fn test_voter_circuit() {

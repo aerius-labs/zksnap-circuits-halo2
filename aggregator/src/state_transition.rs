@@ -19,6 +19,7 @@ use num_bigint::BigUint;
 use biguint_halo2::big_uint::chip::BigUintChip;
 use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp, Secp256k1Affine};
 use paillier_chip::paillier::{EncryptionPublicKeyAssigned, PaillierChip};
+use serde::{Deserialize, Serialize};
 use voter::{compress_nullifier, CircuitExt, EncryptionPublicKey};
 
 const ENC_BIT_LEN: usize = 176;
@@ -26,7 +27,7 @@ const LIMB_BIT_LEN: usize = 88;
 
 //TODO: Constrain the nullifier hash using x and y limbs
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexedMerkleTreeInput<F: BigPrimeField> {
     old_root: F,
     low_leaf: IMTLeaf<F>,

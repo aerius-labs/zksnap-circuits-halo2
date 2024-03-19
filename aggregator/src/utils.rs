@@ -13,8 +13,8 @@ use rand::{thread_rng, Rng};
 
 use indexed_merkle_tree_halo2::utils::{IndexedMerkleTree, IndexedMerkleTreeLeaf as IMTLeaf};
 use voter::merkletree::native::MerkleTree;
-use voter_tests::{gen_test_nullifier, verify_nullifier};
 use voter::{EncryptionPublicKey, VoterCircuitInput};
+use voter_tests::{gen_test_nullifier, verify_nullifier};
 
 use crate::state_transition::{IndexedMerkleTreeInput, StateTransitionInput};
 
