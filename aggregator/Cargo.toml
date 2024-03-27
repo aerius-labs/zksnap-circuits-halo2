@@ -20,6 +20,7 @@ indexed-merkle-tree-halo2 = { git = "https://github.com/aerius-labs/indexed-merk
 rand_chacha = "0.3.1"
 snark-verifier-sdk = { git = "https://github.com/aerius-labs/snark-verifier.git", branch = "feat/custom" }
 ark-std = "0.4.0"
+num-traits = "0.2.18"
 
 voter = { path = "../voter" }
 voter-tests = { path = "../voter_tests" }

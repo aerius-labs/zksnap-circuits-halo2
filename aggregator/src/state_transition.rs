@@ -71,6 +71,9 @@ impl<F: BigPrimeField> IndexedMerkleTreeInput<F> {
     pub fn get_old_root(&self) -> F {
         self.old_root
     }
+    pub fn get_new_root(&self) -> F {
+        self.new_root
+    }
 }
 
 #[derive(Debug, Clone)]
