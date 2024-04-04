@@ -1,5 +1,5 @@
 [workspace]
-members = ["voter", "aggregator"]
+members = ["voter", "aggregator", "voter/frontend/wasm"]
 
 [profile.dev]
 opt-level = 3
