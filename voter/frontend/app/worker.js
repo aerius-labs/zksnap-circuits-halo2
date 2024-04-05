@@ -23,8 +23,8 @@ self.onmessage = async (e) => {
 
             halo2wasm.config({
                 k: 15,
-                numAdvice: 49,
-                numLookupAdvice: 6,
+                numAdvice: 1,
+                numLookupAdvice: 1,
                 numInstance: 1,
                 numLookupBits: 14,
                 numVirtualInstance: 1,
