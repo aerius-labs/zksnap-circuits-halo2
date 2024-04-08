@@ -252,35 +252,35 @@ pub fn voter_circuit<F: BigPrimeField>(
     }
 
     // 3. Verify nullifier
-    // let message = proposal_id
-    //     .value()
-    //     .to_bytes_le()[..2]
-    //     .iter()
-    //     .map(|v| ctx.load_witness(F::from(*v as u64)))
-    //     .collect::<Vec<_>>();
-    // {
-    //     let mut _proposal_id = ctx.load_zero();
-    //     for i in 0..2 {
-    //         _proposal_id = gate.mul_add(
-    //             ctx,
-    //             message[i],
-    //             QuantumCell::Constant(F::from(1u64 << (8 * i))),
-    //             _proposal_id
-    //         );
-    //     }
-    //     ctx.constrain_equal(&_proposal_id, &proposal_id);
-    // }
+    let message = proposal_id
+        .value()
+        .to_bytes_le()[..2]
+        .iter()
+        .map(|v| ctx.load_witness(F::from(*v as u64)))
+        .collect::<Vec<_>>();
+    {
+        let mut _proposal_id = ctx.load_zero();
+        for i in 0..2 {
+            _proposal_id = gate.mul_add(
+                ctx,
+                message[i],
+                QuantumCell::Constant(F::from(1u64 << (8 * i))),
+                _proposal_id
+            );
+        }
+        ctx.constrain_equal(&_proposal_id, &proposal_id);
+    }
 
     let compressed_nullifier = compress_nullifier(ctx, range, &nullifier);
 
-    // let plume_input = PlumeInput::new(
-    //     nullifier,
-    //     s_nullifier.clone(),
-    //     c_nullifier,
-    //     pk_voter,
-    //     message
-    // );
-    // verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
+    let plume_input = PlumeInput::new(
+        nullifier,
+        s_nullifier.clone(),
+        c_nullifier,
+        pk_voter,
+        message
+    );
+    verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
 
     //NULLIFIER
     public_inputs.extend(compressed_nullifier.to_vec());

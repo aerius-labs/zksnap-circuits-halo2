@@ -9,6 +9,98 @@ self.onmessage = async (e) => {
                 MyCircuit,
             } = await import("../wasm/pkg/wasm");
 
+            function fetchProposalId() {}
+
+            function fetchUserData(public_key) {
+                fetch(
+                    `localhost:8080/proposal/send_voter_dto/6607fa5217f3c0572df17c01/0x11f2b30c9479ccaa639962e943ca7cfd3498705258ddb49dfe25bba00a555e48cb35a79f3d084ce26dbac0e6bb887463774817cb80e89b20c0990bc47f9075d5`
+                )
+                    .then((response) => response.json())
+                    .then((data) => {
+                        console.log(data);
+                        return data;
+                    })
+                    .catch((error) => {
+                        console.error("Error:", error);
+                    });
+            }
+
+            // function encVote(m, r, n, g) {
+            //     let n2 = n * n;
+            //     let gm = g ** m;
+            //     let rn = r ** n;
+            //     let c = (gm * rn) % n2;
+            //     return c;
+            // }
+
+            // // fetch membership root
+            // // fetch pk_enc
+            // // fetch pk_voter
+            // // fetch memebership proof and helper
+            // // fetch proposal id
+
+            // create signer
+
+            const message =
+                "Please sign this message to provide your public key.";
+
+            // Extracting the public key from the signature
+            const messageBytes = ethers.utils.arrayify(
+                ethers.utils.hashMessage(message)
+            );
+            let flatSig = await signer.signMessage(message);
+
+            // Extracting the public key from the signature
+            const recoveredPubKey = ethers.utils.recoverPublicKey(
+                messageBytes,
+                flatSig
+            );
+
+            // fetch the user data
+            let data = fetchUserData(recoveredPubKey);
+
+            // // get vote
+            // // generate vote_enc
+            // let vote = [1, 0, 0, 0, 0];
+            // let voteEnc = [];
+            // for (i = 0; i < vote.length; i++) {
+            //     voteEnc.push(encVote(vote[i], r, pkEnc.n, pkEnc.g));
+            // }
+
+            // // Generate Nullifier Code.
+            // // Note: Only works with Taho Wallet (https://github.com/tahowallet/extension/pull/3638)
+            // await window.ethereum.request({
+            //     method: "eth_requestAccounts",
+            //     params: [],
+            // });
+
+            // accountAddress = (
+            //     await window.ethereum.request({
+            //         method: "eth_accounts",
+            //         params: [],
+            //     })
+            // )[0];
+
+            // let nullifier = await window.ethereum.request({
+            //     method: "eth_getPlumeSignature",
+            //     params: ["this is a test message - hi aayush", accountAddress],
+            // });
+
+            // let wasmInput = {
+            //     membership_root: Fr,
+            //     pk_enc: EncryptionPublicKey,
+            //     nullifier: Secp256k1Affine,
+            //     proposal_id: Fr,
+            //     vote_enc: Vec<BigUint>,
+            //     s_nullifier: Fq,
+            //     vote: Vec<Fr>,
+            //     r_enc: Vec<BigUint>,
+            //     pk_voter: Secp256k1Affine,
+            //     c_nullifier: Fq,
+            //     membership_proof: Vec<Fr>,
+            //     membership_proof_helper: Vec<Fr>,
+            // };
+
             await init();
             console.log("Wasm initialized");
 
@@ -23,8 +115,8 @@ self.onmessage = async (e) => {
 
             halo2wasm.config({
                 k: 15,
-                numAdvice: 1,
-                numLookupAdvice: 1,
+                numAdvice: 412,
+                numLookupAdvice: 11,
                 numInstance: 1,
                 numLookupBits: 14,
                 numVirtualInstance: 1,
