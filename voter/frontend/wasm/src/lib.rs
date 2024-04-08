@@ -1,13 +1,34 @@
-use voter::voter_circuit;
+use num_bigint::BigUint;
+use serde::{ Deserialize, Serialize };
+use tsify::Tsify;
+use voter::{ voter_circuit, EncryptionPublicKey };
 use voter_tests::generate_random_voter_circuit_inputs;
 use wasm_bindgen::prelude::*;
 use std::{ cell::RefCell, rc::Rc };
 
 use halo2_wasm::{
     halo2_base::{ gates::{ circuit::builder::BaseCircuitBuilder, RangeChip }, AssignedValue },
-    halo2lib::ecc::Bn254Fr as Fr,
+    halo2lib::ecc::{ Bn254Fr as Fr, Secp256k1Affine, Secp256k1Fq as Fq },
     Halo2Wasm,
 };
+
+#[derive(Tsify, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct WasmInput {
+    membership_root: Fr,
+    pk_enc: EncryptionPublicKey,
+    nullifier: Secp256k1Affine,
+    proposal_id: Fr,
+    vote_enc: Vec<BigUint>,
+    s_nullifier: Fq,
+    vote: Vec<Fr>,
+    r_enc: Vec<BigUint>,
+    pk_voter: Secp256k1Affine,
+    c_nullifier: Fq,
+    membership_proof: Vec<Fr>,
+    membership_proof_helper: Vec<Fr>,
+}
 
 #[wasm_bindgen]
 pub struct MyCircuit {
