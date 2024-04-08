@@ -11,53 +11,29 @@ self.onmessage = async (e) => {
 
             function fetchProposalId() {}
 
-            function fetchUserData(public_key) {
-                fetch(
-                    `localhost:8080/proposal/send_voter_dto/6607fa5217f3c0572df17c01/0x11f2b30c9479ccaa639962e943ca7cfd3498705258ddb49dfe25bba00a555e48cb35a79f3d084ce26dbac0e6bb887463774817cb80e89b20c0990bc47f9075d5`
-                )
-                    .then((response) => response.json())
-                    .then((data) => {
-                        console.log(data);
-                        return data;
-                    })
-                    .catch((error) => {
-                        console.error("Error:", error);
-                    });
+            
+            async function fetchUserData() {
+                try {
+                    const response = await fetch(`http://localhost:8080/proposal/send_voter_dto/6607fa5217f3c0572df17c01/0x11f2b30c9479ccaa639962e943ca7cfd3498705258ddb49dfe25bba00a555e48cb35a79f3d084ce26dbac0e6bb887463774817cb80e89b20c0990bc47f9075d5`);
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    const data = await response.json();
+                    console.log(data);
+                    return data;
+                } catch (error) {
+                    console.error("Error:", error);
+                    // Optionally, handle the error (e.g., update UI to show an error message).
+                    return null; // Or handle the failure case appropriately.
+                }
             }
+            
 
             // function encVote(m, r, n, g) {
             //     let n2 = n * n;
             //     let gm = g ** m;
             //     let rn = r ** n;
             //     let c = (gm * rn) % n2;
-            //     return c;
-            // }
-
-            // // fetch membership root
-            // // fetch pk_enc
-            // // fetch pk_voter
-            // // fetch memebership proof and helper
-            // // fetch proposal id
-
-            // create signer
-
-            const message =
-                "Please sign this message to provide your public key.";
-
-            // Extracting the public key from the signature
-            const messageBytes = ethers.utils.arrayify(
-                ethers.utils.hashMessage(message)
-            );
-            let flatSig = await signer.signMessage(message);
-
-            // Extracting the public key from the signature
-            const recoveredPubKey = ethers.utils.recoverPublicKey(
-                messageBytes,
-                flatSig
-            );
-
-            // fetch the user data
-            let data = fetchUserData(recoveredPubKey);
 
             // // get vote
             // // generate vote_enc
@@ -100,6 +76,9 @@ self.onmessage = async (e) => {
             //     membership_proof: Vec<Fr>,
             //     membership_proof_helper: Vec<Fr>,
             // };
+
+            let data = await fetchUserData();
+            console.log(data);
 
             await init();
             console.log("Wasm initialized");
