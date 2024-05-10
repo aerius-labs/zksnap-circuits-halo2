@@ -1,0 +1,20 @@
+[package]
+name = "wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+halo2-wasm = { git = "https://github.com/aerius-labs/halo2-browser.git", branch = "feat/custom", default-features = false }
+wasm-bindgen = "0.2.87"
+voter = { path = "../../../voter" }
+voter-tests = { path = "../../../voter_tests" }
+serde = {version = "1.0.197" ,features = ["derive"] }
+tsify = "0.4.5"
+num-bigint = "0.4.4"
+
+[features]
+default=["rayon"]
+rayon=["halo2-wasm/rayon"]
