@@ -301,14 +301,14 @@ pub struct VoterCircuit<F: BigPrimeField> {
 impl<F: BigPrimeField> VoterCircuit<F> {
     pub fn new(config: BaseCircuitParams, input: VoterCircuitInput<F>) -> Self {
         let mut inner = BaseCircuitBuilder::default();
-        inner.set_params(config);
+        inner.set_params(config.clone());
 
         let mut public_inputs = Vec::<AssignedValue<F>>::new();
         let range = inner.range_chip();
         let ctx = inner.main(0);
         voter_circuit(ctx, &range, input.clone(), &mut public_inputs);
         inner.assigned_instances[0].extend(public_inputs);
-        inner.calculate_params(Some(10));
+        inner.calculate_params(config.lookup_bits);
         println!("voter params: {:?}", inner.params());
         Self { input, inner }
     }
