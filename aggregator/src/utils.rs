@@ -3,7 +3,8 @@ use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use halo2_base::halo2_proofs::halo2curves::group::Curve;
 use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fq, Secp256k1, Secp256k1Affine};
 use halo2_base::halo2_proofs::halo2curves::secq256k1::Fp;
-use halo2_base::utils::{fe_to_biguint, ScalarField};
+use halo2_base::utils::{fe_to_biguint, BigPrimeField, ScalarField};
+use halo2_base::{AssignedValue, Context};
 use halo2_ecc::*;
 use num_bigint::{BigUint, RandBigInt};
 use paillier_chip::paillier::{paillier_add_native, paillier_enc_native};
@@ -492,4 +493,15 @@ pub fn generate_random_state_transition_circuit_inputs() -> StateTransitionInput
     };
 
     input
+}
+
+pub fn assign_big_uint<F: BigPrimeField>(
+    ctx: &mut Context<F>,
+    value: &BigUint,
+) -> Vec<AssignedValue<F>> {
+    let limbs = value.to_u64_digits();
+    limbs
+        .into_iter()
+        .map(|limb| ctx.load_witness(F::from(limb)))
+        .collect()
 }
