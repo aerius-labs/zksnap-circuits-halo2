@@ -31,7 +31,6 @@ pub struct IndexedMerkleTreeInput<F: BigPrimeField> {
     new_leaf_index: F,
     new_leaf_proof: Vec<F>,
     new_leaf_proof_helper: Vec<F>,
-    is_new_leaf_largest: F,
 }
 
 impl<F: BigPrimeField> IndexedMerkleTreeInput<F> {
@@ -45,7 +44,6 @@ impl<F: BigPrimeField> IndexedMerkleTreeInput<F> {
         new_leaf_index: F,
         new_leaf_proof: Vec<F>,
         new_leaf_proof_helper: Vec<F>,
-        is_new_leaf_largest: F,
     ) -> Self {
         Self {
             old_root,
@@ -57,7 +55,6 @@ impl<F: BigPrimeField> IndexedMerkleTreeInput<F> {
             new_leaf_index,
             new_leaf_proof,
             new_leaf_proof_helper,
-            is_new_leaf_largest,
         }
     }
     pub fn get_old_root(&self) -> F {
@@ -206,7 +203,6 @@ pub fn state_transition_circuit<F: BigPrimeField>(
     let new_leaf = IndexedMerkleTreeLeaf::new(val, next_val, next_idx);
 
     let new_leaf_index = ctx.load_witness(nullifier_tree.new_leaf_index);
-    let is_new_leaf_largest = ctx.load_witness(nullifier_tree.is_new_leaf_largest);
 
     let low_leaf_proof = nullifier_tree
         .low_leaf_proof
@@ -229,21 +225,20 @@ pub fn state_transition_circuit<F: BigPrimeField>(
         .map(|x| ctx.load_witness(*x))
         .collect::<Vec<_>>();
 
-    // insert_leaf::<F, 3, 2>(
-    //     ctx,
-    //     range,
-    //     &hasher,
-    //     &old_root,
-    //     &low_leaf,
-    //     &low_leaf_proof,
-    //     &low_leaf_proof_helper,
-    //     &new_root,
-    //     &new_leaf,
-    //     &new_leaf_index,
-    //     &new_leaf_proof,
-    //     &new_leaf_proof_helper,
-    //     &is_new_leaf_largest,
-    // );
+    insert_leaf::<F, 3, 2>(
+        ctx,
+        range,
+        &hasher,
+        &old_root,
+        &low_leaf,
+        &low_leaf_proof,
+        &low_leaf_proof_helper,
+        &new_root,
+        &new_leaf,
+        &new_leaf_index,
+        &new_leaf_proof,
+        &new_leaf_proof_helper,
+    );
 
     for enc_vote in aggr_vote {
         public_inputs.extend(enc_vote.limbs());
