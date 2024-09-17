@@ -1,5 +1,7 @@
 use aggregator::state_transition::{state_transition_circuit, StateTransitionInput};
-use aggregator::utils::generate_random_state_transition_circuit_inputs;
+use aggregator::utils::{
+    assign_big_uint, compress_native_nullifier, generate_random_state_transition_circuit_inputs,
+};
 use ark_std::{end_timer, start_timer};
 use halo2_base::gates::circuit::BaseCircuitParams;
 use halo2_base::gates::circuit::{builder::RangeCircuitBuilder, CircuitBuilderStage};
@@ -42,7 +44,37 @@ fn state_transition_circuit_bench(
     let range = builder.range_chip();
 
     let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
-    state_transition_circuit(builder.main(0), &range, input, &mut public_inputs);
+    let mut state_transition_vec = Vec::<AssignedValue<Fr>>::new();
+    let ctx = builder.main(0);
+
+    state_transition_vec.extend(
+        compress_native_nullifier(&input.nullifier)
+            .iter()
+            .map(|&x| ctx.load_witness(x)),
+    );
+
+    let enc_g = input.pk_enc.g;
+    let enc_h = input.pk_enc.n;
+
+    state_transition_vec.extend(assign_big_uint(ctx, &enc_g));
+    state_transition_vec.extend(assign_big_uint(ctx, &enc_h));
+
+    state_transition_vec.extend(
+        input
+            .incoming_vote
+            .iter()
+            .flat_map(|x| assign_big_uint(ctx, x)),
+    );
+
+    state_transition_vec.extend(input.prev_vote.iter().flat_map(|x| assign_big_uint(ctx, x)));
+
+    state_transition_circuit(
+        ctx,
+        &range,
+        input.nullifier_tree,
+        state_transition_vec,
+        &mut public_inputs,
+    );
 
     end_timer!(start0);
     if !stage.witness_gen_only() {

@@ -234,9 +234,11 @@ pub fn voter_circuit<F: BigPrimeField>(
     // ctx.constrain_equal(&vote_sum_assigned, &one);
 
     //PK_ENC_n
+    println!("pk_enc n : {:?}", pk_enc.n.limbs().to_vec());
     public_inputs.extend(pk_enc.n.limbs().to_vec());
 
     //PK_ENC_g
+    println!("pk_enc n : {:?}", pk_enc.n.limbs().to_vec());
     public_inputs.extend(pk_enc.g.limbs().to_vec());
 
     // 2. Verify correct vote encryption
