@@ -5,6 +5,7 @@ use halo2_base::halo2_proofs::halo2curves::group::Curve;
 use halo2_base::halo2_proofs::halo2curves::secp256k1::{Fp, Fq, Secp256k1, Secp256k1Affine};
 use halo2_base::utils::{fe_to_biguint, ScalarField};
 use halo2_ecc::*;
+use indexed_merkle_tree_halo2::utils::IndexedMerkleTree;
 use k256::elliptic_curve::hash2curve::GroupDigest;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{
@@ -18,7 +19,7 @@ use rand::rngs::OsRng;
 use rand::thread_rng;
 use sha2::{Digest, Sha256};
 
-use voter::merkletree::native::MerkleTree;
+use voter::merkletree::native::{self, MerkleTree};
 use voter::{voter_circuit, EncryptionPublicKey, VoterCircuitInput};
 
 pub fn compress_point(point: &Secp256k1Affine) -> [u8; 33] {
@@ -158,6 +159,7 @@ pub fn generate_random_voter_circuit_inputs() -> VoterCircuitInput<Fr> {
     }
 
     let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
+    let mut membership_tree = IndexedMerkleTree::<Fr, T, RATE>::new_default_leaf(treesize as usize);
 
     let mut leaves = Vec::<Fr>::new();
 
@@ -189,17 +191,26 @@ pub fn generate_random_voter_circuit_inputs() -> VoterCircuitInput<Fr> {
             native_hasher.update(&[Fr::ZERO]);
         }
         leaves.push(native_hasher.squeeze_and_reset());
+        membership_tree.insert_leaf(&mut native_hasher, leaves[i as usize], i as usize);
     }
-
-    let mut membership_tree =
-        MerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
 
     let membership_root = membership_tree.get_root();
     let (membership_proof, membership_proof_helper) = membership_tree.get_proof(0);
+
     assert_eq!(
-        membership_tree.verify_proof(&leaves[0], 0, &membership_root, &membership_proof),
+        membership_tree.verify_proof(&mut native_hasher, 0, &membership_root, &membership_proof),
         true
     );
+
+    // let mut membership_tree =
+    //     MerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
+
+    // let membership_root = membership_tree.get_root();
+    // let (membership_proof, membership_proof_helper) = membership_tree.get_proof(0);
+    // assert_eq!(
+    //     membership_tree.verify_proof(&leaves[0], 0, &membership_root, &membership_proof),
+    //     true
+    // );
 
     let pk_enc = EncryptionPublicKey { n, g };
 
