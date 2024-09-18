@@ -33,7 +33,7 @@ fn generate_voter_circuit_inputs(
     pk_voter: Secp256k1Affine,
     vote: Vec<Fr>,
     r_enc: Vec<BigUint>,
-    members_tree: &MerkleTree<'_, Fr, T, RATE>,
+    members_tree: &IndexedMerkleTree<Fr, T, RATE>,
     round: usize,
 ) -> VoterCircuitInput<Fr> {
     let membership_root = members_tree.get_root();
@@ -117,6 +117,10 @@ fn generate_state_transition_circuit_inputs(
 
     let mut tree =
         IndexedMerkleTree::<Fr, T, RATE>::new_default_leaf(nullifier_tree_preimages.len());
+
+    for i in 0..nullifier_tree_leaves.len() {
+        tree.insert_leaf(&mut native_hasher, nullifier_tree_leaves[i], i);
+    }
 
     let old_root = tree.get_root();
 
@@ -250,12 +254,17 @@ pub fn generate_wrapper_circuit_input(
         members_tree_leaves.push(native_hasher.squeeze_and_reset());
     }
 
+    let mut members_tree = IndexedMerkleTree::<Fr, T, RATE>::new_default_leaf(8);
+
     for _ in num_round..8 {
         native_hasher.update(&[Fr::ZERO]);
-        members_tree_leaves.push(native_hasher.squeeze_and_reset());
+        let hash = native_hasher.squeeze_and_reset();
+        members_tree_leaves.push(hash.clone());
     }
 
-    let members_tree = MerkleTree::new(&mut native_hasher, members_tree_leaves.clone()).unwrap();
+    for i in 0..members_tree_leaves.len() {
+        members_tree.insert_leaf(&mut native_hasher, members_tree_leaves[i], i);
+    }
 
     let mut rng = thread_rng();
     let mut prev_vote = Vec::<BigUint>::new();
