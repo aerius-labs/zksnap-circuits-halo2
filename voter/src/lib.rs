@@ -53,8 +53,8 @@ pub struct VoterCircuitInput<F: BigPrimeField> {
     // * Public inputs
     // pub membership_root: F,
     pub pk_enc: EncryptionPublicKey,
-    // pub nullifier: Secp256k1Affine,
-    pub nullifier: Vec<F>,
+    // pub nullifier: Poseidon<[F;32]>,
+    pub nullifier: F,
     // ? This will be 2 bytes for performance, can change this
     // ? to accomodate more bytes later based on requirement.
     pub proposal_id: F,
@@ -76,7 +76,7 @@ pub struct VoterCircuitInput<F: BigPrimeField> {
 impl<F: BigPrimeField> VoterCircuitInput<F> {
     pub fn new(
         pk_enc: EncryptionPublicKey,
-        nullifier: Vec<F>,
+        nullifier: F,
         proposal_id: F,
         vote_enc: Vec<BigUint>,
         vote: Vec<F>,
@@ -148,7 +148,7 @@ pub fn voter_circuit<F: BigPrimeField>(
     let biguint_chip = BigUintChip::construct(range, LIMB_BIT_LEN);
     let paillier_chip = PaillierChip::construct(&biguint_chip, ENC_BIT_LEN);
     
-    let nullifier_fe = input.nullifier.iter().map(|x| ctx.load_witness(*x)).collect::<Vec<_>>();
+    let nullifier_fe = ctx.load_witness(input.nullifier);
     let proposal_id = ctx.load_witness(input.proposal_id);
     let n_assigned = biguint_chip
         .assign_integer(ctx, Value::known(input.pk_enc.n.clone()), ENC_BIT_LEN)
@@ -227,10 +227,10 @@ pub fn voter_circuit<F: BigPrimeField>(
     }
 
     // //NULLIFIER
-    public_inputs.extend(nullifier_fe);
+    public_inputs.push(nullifier_fe);
 
     //PROPOSAL_ID
-    public_inputs.extend([proposal_id].to_vec());
+    public_inputs.push(proposal_id);
 
 
 }

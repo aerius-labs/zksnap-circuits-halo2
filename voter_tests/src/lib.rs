@@ -94,11 +94,10 @@ pub fn verify_nullifier(
     assert_eq!(*c, _c);
 }
 
-pub fn gen_test_nullifier() -> Vec<Fr> {
+pub fn gen_test_nullifier() -> Fr {
     // generate 32 bytes random number
     let mut rng = thread_rng();
-    let random_number = rng.gen::<[u8; 32]>();
-    random_number.to_vec().iter().map(|x| Fr::from(*x as u64)).collect()
+    Fr::random(&mut rng)
 }
 
 pub fn generate_random_voter_circuit_inputs() -> VoterCircuitInput<Fr> {
