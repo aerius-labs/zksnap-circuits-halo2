@@ -51,9 +51,10 @@ pub struct EncryptionPublicKey {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct VoterCircuitInput<F: BigPrimeField> {
     // * Public inputs
-    pub membership_root: F,
+    // pub membership_root: F,
     pub pk_enc: EncryptionPublicKey,
-    pub nullifier: Secp256k1Affine,
+    // pub nullifier: Secp256k1Affine,
+    pub nullifier: Vec<F>,
     // ? This will be 2 bytes for performance, can change this
     // ? to accomodate more bytes later based on requirement.
     pub proposal_id: F,
@@ -62,44 +63,32 @@ pub struct VoterCircuitInput<F: BigPrimeField> {
     // * Private inputs
 
     // * s = r + sk * c
-    pub s_nullifier: Fq,
+    // pub s_nullifier: Fq,
 
     pub vote: Vec<F>,
     pub r_enc: Vec<BigUint>,
-    pub pk_voter: Secp256k1Affine,
-    pub c_nullifier: Fq,
-    pub membership_proof: Vec<F>,
-    pub membership_proof_helper: Vec<F>,
+    // pub pk_voter: Secp256k1Affine,
+    // pub c_nullifier: Fq,
+    // pub membership_proof: Vec<F>,
+    // pub membership_proof_helper: Vec<F>,
 }
 
 impl<F: BigPrimeField> VoterCircuitInput<F> {
     pub fn new(
-        membership_root: F,
         pk_enc: EncryptionPublicKey,
-        nullifier: Secp256k1Affine,
+        nullifier: Vec<F>,
         proposal_id: F,
         vote_enc: Vec<BigUint>,
-        s_nullifier: Fq,
         vote: Vec<F>,
         r_enc: Vec<BigUint>,
-        pk_voter: Secp256k1Affine,
-        c_nullifier: Fq,
-        membership_proof: Vec<F>,
-        membership_proof_helper: Vec<F>,
     ) -> Self {
         Self {
-            membership_root,
             pk_enc,
             nullifier,
             proposal_id,
             vote_enc,
-            s_nullifier,
             vote,
             r_enc,
-            pk_voter,
-            c_nullifier,
-            membership_proof,
-            membership_proof_helper,
         }
     }
 }
@@ -119,32 +108,32 @@ pub trait CircuitExt<F: Field>: Circuit<F> {
     }
 }
 
-pub fn compress_nullifier<F: BigPrimeField>(
-    ctx: &mut Context<F>,
-    range: &RangeChip<F>,
-    nullifier: &EcPoint<F, ProperCrtUint<F>>,
-) -> Vec<AssignedValue<F>> {
-    let mut compressed_pt = Vec::<AssignedValue<F>>::with_capacity(4);
+// pub fn compress_nullifier<F: BigPrimeField>(
+//     ctx: &mut Context<F>,
+//     range: &RangeChip<F>,
+//     nullifier: &EcPoint<F, ProperCrtUint<F>>,
+// ) -> Vec<AssignedValue<F>> {
+//     let mut compressed_pt = Vec::<AssignedValue<F>>::with_capacity(4);
 
-    let is_y_even = big_is_even::positive(
-        range,
-        ctx,
-        nullifier.y().as_ref().truncation.clone(),
-        LIMB_BIT_LEN,
-    );
+//     let is_y_even = big_is_even::positive(
+//         range,
+//         ctx,
+//         nullifier.y().as_ref().truncation.clone(),
+//         LIMB_BIT_LEN,
+//     );
 
-    let tag = range.gate().select(
-        ctx,
-        QuantumCell::Constant(F::from(2u64)),
-        QuantumCell::Constant(F::from(3u64)),
-        is_y_even,
-    );
+//     let tag = range.gate().select(
+//         ctx,
+//         QuantumCell::Constant(F::from(2u64)),
+//         QuantumCell::Constant(F::from(3u64)),
+//         is_y_even,
+//     );
 
-    compressed_pt.push(tag);
-    compressed_pt.extend(nullifier.x().limbs().to_vec());
+//     compressed_pt.push(tag);
+//     compressed_pt.extend(nullifier.x().limbs().to_vec());
 
-    compressed_pt
-}
+//     compressed_pt
+// }
 
 pub fn voter_circuit<F: BigPrimeField>(
     ctx: &mut Context<F>,
@@ -158,29 +147,8 @@ pub fn voter_circuit<F: BigPrimeField>(
     hasher.initialize_consts(ctx, gate);
     let biguint_chip = BigUintChip::construct(range, LIMB_BIT_LEN);
     let paillier_chip = PaillierChip::construct(&biguint_chip, ENC_BIT_LEN);
-    let fp_chip = FpChip::<F>::new(range, LIMB_BIT_LEN, NUM_LIMBS);
-    let fq_chip = FqChip::new(range, LIMB_BIT_LEN, NUM_LIMBS);
-    let ecc_chip = EccChip::<F, FpChip<F>>::new(&fp_chip);
-    let sha256_chip = Sha256Chip::new(range);
-
-    // Assigning inputs to the circuit.
-    let pk_voter = ecc_chip.load_private_unchecked(ctx, (input.pk_voter.x, input.pk_voter.y));
-    let nullifier = ecc_chip.load_private_unchecked(ctx, (input.nullifier.x, input.nullifier.y));
-    let s_nullifier = fq_chip.load_private(ctx, input.s_nullifier);
-    let c_nullifier = fq_chip.load_private(ctx, input.c_nullifier);
-    let membership_root = ctx.load_witness(input.membership_root);
-    let leaf_preimage = [pk_voter.x().limbs(), pk_voter.y().limbs()].concat();
-    let leaf = hasher.hash_fix_len_array(ctx, gate, &leaf_preimage[..]);
-    let membership_proof = input
-        .membership_proof
-        .iter()
-        .map(|&proof| ctx.load_witness(proof))
-        .collect::<Vec<_>>();
-    let membership_proof_helper = input
-        .membership_proof_helper
-        .iter()
-        .map(|&helper| ctx.load_witness(helper))
-        .collect::<Vec<_>>();
+    
+    let nullifier_fe = input.nullifier.iter().map(|x| ctx.load_witness(*x)).collect::<Vec<_>>();
     let proposal_id = ctx.load_witness(input.proposal_id);
     let n_assigned = biguint_chip
         .assign_integer(ctx, Value::known(input.pk_enc.n.clone()), ENC_BIT_LEN)
@@ -227,23 +195,6 @@ pub fn voter_circuit<F: BigPrimeField>(
         g: g_assigned,
     };
 
-    let zero = ctx.load_zero();
-    let one = ctx.load_constant(F::from(1));
-
-    // 1. Verify if the voter is in the membership tree
-    verify_merkle_proof(
-        ctx,
-        range,
-        &hasher,
-        &membership_root,
-        &leaf,
-        &membership_proof,
-        &membership_proof_helper,
-        &zero,
-        &one,
-        false,
-    );
-
     // Check to verify correct votes have been passed.
     let _ = vote_assigned_fe.iter().map(|x| gate.assert_bit(ctx, *x));
     let zero = ctx.load_zero();
@@ -275,43 +226,13 @@ pub fn voter_circuit<F: BigPrimeField>(
         public_inputs.append(&mut vote_enc_assigned_big[i].limbs().to_vec());
     }
 
-    // 3. Verify nullifier
-    let message = proposal_id.value().to_bytes_le()[..2]
-        .iter()
-        .map(|v| ctx.load_witness(F::from(*v as u64)))
-        .collect::<Vec<_>>();
-    {
-        let mut _proposal_id = ctx.load_zero();
-        for i in 0..2 {
-            _proposal_id = gate.mul_add(
-                ctx,
-                message[i],
-                QuantumCell::Constant(F::from(1u64 << (8 * i))),
-                _proposal_id,
-            );
-        }
-        ctx.constrain_equal(&_proposal_id, &proposal_id);
-    }
-
-    let compressed_nullifier = compress_nullifier(ctx, range, &nullifier);
-
-    let plume_input = PlumeInput::new(
-        nullifier,
-        s_nullifier.clone(),
-        c_nullifier,
-        pk_voter,
-        message,
-    );
-    verify_plume(ctx, &ecc_chip, &sha256_chip, 4, 4, plume_input);
-
-    //NULLIFIER
-    public_inputs.extend(compressed_nullifier.to_vec());
-
-    //MERKLE_ROOT
-    public_inputs.extend([membership_root].to_vec());
+    // //NULLIFIER
+    public_inputs.extend(nullifier_fe);
 
     //PROPOSAL_ID
     public_inputs.extend([proposal_id].to_vec());
+
+
 }
 
 #[derive(Clone, Default)]
@@ -330,7 +251,7 @@ impl<F: BigPrimeField> VoterCircuit<F> {
         let ctx = inner.main(0);
         voter_circuit(ctx, &range, input.clone(), &mut public_inputs);
         inner.assigned_instances[0].extend(public_inputs);
-        inner.calculate_params(Some(10));
+        inner.calculate_params(Some(9));
         println!("voter params: {:?}", inner.params());
         Self { input, inner }
     }

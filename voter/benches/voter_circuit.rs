@@ -20,7 +20,7 @@ use pprof::criterion::{Output, PProfProfiler};
 use voter::{voter_circuit, VoterCircuitInput};
 use voter_tests::generate_random_voter_circuit_inputs;
 
-const K: u32 = 13;
+const K: u32 = 15;
 
 fn voter_circuit_bench(
     stage: CircuitBuilderStage,
@@ -47,7 +47,7 @@ fn voter_circuit_bench(
 
     end_timer!(start0);
     if !stage.witness_gen_only() {
-        builder.calculate_params(Some(20));
+        builder.calculate_params(Some(9));
     }
     builder
 }
