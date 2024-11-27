@@ -16,7 +16,7 @@ use num_bigint::{BigUint, RandBigInt};
 use paillier_chip::paillier::paillier_enc_native;
 use pse_poseidon::Poseidon;
 use rand::rngs::OsRng;
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 use sha2::{Digest, Sha256};
 
 use voter::merkletree::native::{self, MerkleTree};
@@ -94,51 +94,17 @@ pub fn verify_nullifier(
     assert_eq!(*c, _c);
 }
 
-pub fn gen_test_nullifier(sk: &Fq, message: &[u8]) -> (Secp256k1Affine, Fq, Fq) {
-    let pk = (Secp256k1::generator() * sk).to_affine();
-    let compressed_pk = compress_point(&pk);
-
-    let hashed_to_curve = hash_to_curve(message, &compressed_pk);
-
-    let hashed_to_curve_sk = (hashed_to_curve * sk).to_affine();
-
-    let r = Fq::random(OsRng);
-    let g_r = (Secp256k1::generator() * r).to_affine();
-    let hashed_to_curve_r = (hashed_to_curve * r).to_affine();
-
-    let mut sha_hasher = Sha256::new();
-    sha_hasher.update(
-        vec![
-            compress_point(&Secp256k1::generator().to_affine()),
-            compressed_pk,
-            compress_point(&hashed_to_curve),
-            compress_point(&hashed_to_curve_sk),
-            compress_point(&g_r),
-            compress_point(&hashed_to_curve_r),
-        ]
-        .concat(),
-    );
-
-    let mut c = sha_hasher.finalize();
-    c.reverse();
-
-    let c = Fq::from_bytes_le(c.as_slice());
-    let s = r + sk * c;
-
-    (hashed_to_curve_sk, s, c)
+pub fn gen_test_nullifier() -> Vec<Fr> {
+    // generate 32 bytes random number
+    let mut rng = thread_rng();
+    let random_number = rng.gen::<[u8; 32]>();
+    random_number.to_vec().iter().map(|x| Fr::from(*x as u64)).collect()
 }
 
 pub fn generate_random_voter_circuit_inputs() -> VoterCircuitInput<Fr> {
     const ENC_BIT_LEN: usize = 176;
 
-    const T: usize = 3;
-    const RATE: usize = 2;
-    const R_F: usize = 8;
-    const R_P: usize = 57;
-
     let mut rng = thread_rng();
-
-    let treesize = u32::pow(2, 3);
 
     let vote = [Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()].to_vec();
 
@@ -158,79 +124,18 @@ pub fn generate_random_voter_circuit_inputs() -> VoterCircuitInput<Fr> {
         ));
     }
 
-    let mut native_hasher = Poseidon::<Fr, T, RATE>::new(R_F, R_P);
-    let mut membership_tree = IndexedMerkleTree::<Fr, T, RATE>::new_default_leaf(treesize as usize);
-
-    let mut leaves = Vec::<Fr>::new();
-
-    let sk = Fq::random(OsRng);
-    let pk_voter = (Secp256k1::generator() * sk).to_affine();
-
-    let pk_voter_x = pk_voter
-        .x
-        .to_bytes()
-        .to_vec()
-        .chunks(11)
-        .into_iter()
-        .map(|chunk| Fr::from_bytes_le(chunk))
-        .collect::<Vec<_>>();
-    let pk_voter_y = pk_voter
-        .y
-        .to_bytes()
-        .to_vec()
-        .chunks(11)
-        .into_iter()
-        .map(|chunk| Fr::from_bytes_le(chunk))
-        .collect::<Vec<_>>();
-
-    for i in 0..treesize {
-        if i == 0 {
-            native_hasher.update(pk_voter_x.as_slice());
-            native_hasher.update(pk_voter_y.as_slice());
-        } else {
-            native_hasher.update(&[Fr::ZERO]);
-        }
-        leaves.push(native_hasher.squeeze_and_reset());
-        membership_tree.insert_leaf(&mut native_hasher, leaves[i as usize], i as usize);
-    }
-
-    let membership_root = membership_tree.get_root();
-    let (membership_proof, membership_proof_helper) = membership_tree.get_proof(0);
-
-    assert_eq!(
-        membership_tree.verify_proof(&mut native_hasher, 0, &membership_root, &membership_proof),
-        true
-    );
-
-    // let mut membership_tree =
-    //     MerkleTree::<Fr, T, RATE>::new(&mut native_hasher, leaves.clone()).unwrap();
-
-    // let membership_root = membership_tree.get_root();
-    // let (membership_proof, membership_proof_helper) = membership_tree.get_proof(0);
-    // assert_eq!(
-    //     membership_tree.verify_proof(&leaves[0], 0, &membership_root, &membership_proof),
-    //     true
-    // );
-
     let pk_enc = EncryptionPublicKey { n, g };
 
     // Proposal id = 1
-    let (nullifier, s, c) = gen_test_nullifier(&sk, &[1u8, 0u8]);
-    verify_nullifier(&[1u8, 0u8], &nullifier, &pk_voter, &s, &c);
+    let nullifier = gen_test_nullifier();
 
     let input = VoterCircuitInput {
-        membership_root,
         pk_enc,
         nullifier,
         proposal_id: Fr::from(1u64),
         vote_enc,
-        s_nullifier: s,
         vote,
         r_enc,
-        pk_voter,
-        c_nullifier: c,
-        membership_proof: membership_proof.clone(),
-        membership_proof_helper: membership_proof_helper.clone(),
     };
 
     input
@@ -246,35 +151,35 @@ mod test {
     };
 
     use super::generate_random_voter_circuit_inputs;
-    use voter::voter_circuit;
+    use voter::{voter_circuit, CircuitExt, VoterCircuit};
 
     #[test]
     fn test_voter_circuit() {
         let input = generate_random_voter_circuit_inputs();
 
-        // let config = BaseCircuitParams {
-        //     k: 15 as usize,
-        //     num_advice_per_phase: vec![8],
-        //     num_lookup_advice_per_phase: vec![1],
-        //     num_fixed: 1,
-        //     lookup_bits: Some(14),
-        //     num_instance_columns: 1,
-        // };
+        let config = BaseCircuitParams {
+            k: 12 as usize,
+            num_advice_per_phase: vec![8],
+            num_lookup_advice_per_phase: vec![1],
+            num_fixed: 1,
+            lookup_bits: Some(11),
+            num_instance_columns: 1,
+        };
 
-        // let circuit = VoterCircuit::new(config, input.clone());
-        // let prover = MockProver::run(15, &circuit, circuit.instances()).unwrap();
-        // prover.verify().unwrap();
+        let circuit = VoterCircuit::new(config, input.clone());
+        let prover = MockProver::run(12, &circuit, circuit.instances()).unwrap();
+        prover.verify().unwrap();
 
-        base_test()
-            .k(15)
-            .lookup_bits(14)
-            .expect_satisfied(true)
-            .run_builder(|pool, range| {
-                let ctx = pool.main();
+        // base_test()
+        //     .k(12)
+        //     .lookup_bits(11)
+        //     .expect_satisfied(true)
+        //     .run_builder(|pool, range| {
+        //         let ctx = pool.main();
 
-                let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
+        //         let mut public_inputs = Vec::<AssignedValue<Fr>>::new();
 
-                voter_circuit(ctx, &range, input, &mut public_inputs);
-            })
+        //         voter_circuit(ctx, &range, input, &mut public_inputs);
+        //     })
     }
 }
